@@ -125,7 +125,10 @@ if df.empty:
 # Filtros Globais
 busca = st.sidebar.text_input("Ticker", placeholder="PETR4").upper()
 setor_f = st.sidebar.selectbox("Setor", ["Todos"] + sorted(df['Setor'].unique().tolist()))
-liq_f = st.sidebar.select_slider("Liquidez Mínima", options=[0, 100000, 1000000, 5000000], value=200000)
+
+# --- AQUI ESTAVA O ERRO (CORRIGIDO) ---
+# Adicionei o 200000 na lista de options para casar com o value
+liq_f = st.sidebar.select_slider("Liquidez Mínima", options=[0, 100000, 200000, 1000000, 5000000], value=200000)
 
 # Aplica Filtros
 df_view = df[df['Liquidez'] >= liq_f].copy()
