@@ -7,3 +7,4 @@ lxml
 openpyxl
 jinja2
 yfinance
+requests
