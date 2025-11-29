@@ -12,65 +12,63 @@ st.markdown("Análise fundamentalista automatizada de todos os ativos da B3.")
 st.sidebar.header("🔍 Filtros Globais")
 min_liquidez = st.sidebar.number_input("Liquidez Diária Mínima (R$):", value=200000, step=50000)
 
-# --- MOTOR DE DADOS BLINDADO ---
+# --- MOTOR DE DADOS (Versão 5.0 - Compatível com seu Print) ---
 @st.cache_data(ttl=3600)
 def carregar_base_completa():
     try:
-        # 1. Baixar dados brutos
+        # 1. Baixar dados
         df = fundamentus.get_resultado()
-        df = df.reset_index()
-        df.rename(columns={'papel': 'Ticker'}, inplace=True)
         
-        # 2. LIMPEZA DE COLUNAS (A Solução Definitiva)
-        # Transforma " P/L " em "pl", "Div.Yield" em "divyield"
+        # 2. Resetar Index (O Ticker sai do index e vira coluna 'papel')
+        df = df.reset_index()
+        
+        # 3. NORMALIZAÇÃO RADICAL
+        # Transforma TUDO em minúsculo e remove pontos/barras para padronizar
+        # Ex: "Liq.2m" vira "liq2m", "P/L" vira "pl", "Papel" vira "papel"
         df.columns = [col.replace('.', '').replace('/', '').replace(' ', '').lower() for col in df.columns]
         
-        # Agora sabemos exatamente como as colunas se chamam:
-        # cotação -> cotacao (ou algo similar, vamos tratar abaixo)
-        # p/l -> pl
-        # p/vp -> pvp
-        # div.yield -> divyield
-        
-        # Renomeia para nomes padronizados internos
+        # 4. TRADUÇÃO (Mapeamento baseado no seu print)
         rename_map = {
+            'papel': 'Ticker',    # Nome original do index
+            'ticker': 'Ticker',   # Caso já tenha vindo como ticker
             'cotacao': 'Preco',
-            'cotação': 'Preco', # Garantia extra
             'pl': 'PL',
             'pvp': 'PVP',
-            'divyield': 'DY',
-            'roe': 'ROE',
-            'roic': 'ROIC',
+            'dy': 'DY',           # Às vezes vem dy
+            'divyield': 'DY',     # Às vezes vem divyield
             'evebit': 'EV_EBIT',
-            'liq2meses': 'Liquidez',
-            'mrglíq': 'MargemLiquida',
-            'mrliq': 'MargemLiquida'
+            'evebitda': 'EV_EBIT', # Fallback
+            'mrgebit': 'MargemEbit',
+            'mrgliq': 'MargemLiquida',
+            'roic': 'ROIC',
+            'roe': 'ROE',
+            'liq2m': 'Liquidez',      # IDENTIFICADO NO SEU PRINT
+            'liq2meses': 'Liquidez'   # Antigo padrão
         }
         
-        # Renomeia o que encontrar
+        # Aplica a renomeação
         df = df.rename(columns=rename_map)
         
-        # 3. Tratamento de Tipos
-        # Multiplica percentuais por 100
+        # 5. GARANTIA DE COLUNAS (Cria se não existir para não travar)
+        cols_essenciais = ['Preco', 'PL', 'PVP', 'DY', 'ROE', 'ROIC', 'EV_EBIT', 'Liquidez']
+        for col in cols_essenciais:
+            if col not in df.columns:
+                df[col] = 0
+
+        # 6. CONVERSÃO DE TIPOS (Texto -> Número)
         cols_percentuais = ['DY', 'ROE', 'ROIC', 'MargemLiquida']
         for col in cols_percentuais:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce') * 100
+            df[col] = pd.to_numeric(df[col], errors='coerce') * 100
 
-        # Garante números
         cols_numericas = ['Preco', 'PL', 'PVP', 'EV_EBIT', 'Liquidez']
         for col in cols_numericas:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # 4. CÁLCULOS AVANÇADOS
+        # --- MOTOR DE CÁLCULO ---
         
-        # Graham (Precisa de PL e PVP)
-        # Se PL ou PVP não existirem, cria com valor 0 para não travar
-        if 'PL' not in df.columns: df['PL'] = 0
-        if 'PVP' not in df.columns: df['PVP'] = 0
-        if 'Preco' not in df.columns: df['Preco'] = 0
-
-        # LPA = Preço / PL
+        # Graham
+        # LPA = Preço / PL | VPA = Preço / PVP
+        # Evita divisão por zero
         df['LPA'] = np.where(df['PL'] != 0, df['Preco'] / df['PL'], 0)
         df['VPA'] = np.where(df['PVP'] != 0, df['Preco'] / df['PVP'], 0)
         
@@ -80,7 +78,6 @@ def carregar_base_completa():
             return 0
             
         df['Preco_Justo_Graham'] = df.apply(calcular_graham, axis=1)
-        
         df['Potencial_Graham'] = np.where(
             (df['Preco_Justo_Graham'] > 0) & (df['Preco'] > 0),
             ((df['Preco_Justo_Graham'] - df['Preco']) / df['Preco']) * 100,
@@ -88,8 +85,9 @@ def carregar_base_completa():
         )
 
         # Magic Formula
-        if 'EV_EBIT' in df.columns and 'ROIC' in df.columns:
-            df_magic = df[(df['EV_EBIT'] > 0) & (df['ROIC'] > 0)].copy()
+        # Agora usamos 'EV_EBIT' e 'ROIC' garantidos
+        df_magic = df[(df['EV_EBIT'] > 0) & (df['ROIC'] > 0)].copy()
+        if not df_magic.empty:
             df_magic['Rank_EV_EBIT'] = df_magic['EV_EBIT'].rank(ascending=True)
             df_magic['Rank_ROIC'] = df_magic['ROIC'].rank(ascending=False)
             df_magic['Score_Magic'] = df_magic['Rank_EV_EBIT'] + df_magic['Rank_ROIC']
@@ -101,60 +99,45 @@ def carregar_base_completa():
 
     except Exception as e:
         st.error(f"Erro no processamento: {e}")
-        # MODO DEBUG: Se der erro, mostra as colunas que vieram para a gente saber o nome certo
+        # Debug visual para ajudar se der erro de novo
         try:
-            raw_data = fundamentus.get_resultado()
-            st.write("Colunas encontradas na biblioteca (Debug):", raw_data.columns.tolist())
+            raw = fundamentus.get_resultado().reset_index()
+            raw.columns = [c.lower().replace('.','') for c in raw.columns]
+            st.write("Estrutura recebida (Debug):", raw.columns.tolist())
         except:
             pass
         return pd.DataFrame()
 
-# --- CARREGAMENTO ---
-with st.spinner('Processando Big Data da B3...'):
+# --- INTERFACE ---
+with st.spinner('Processando dados...'):
     df = carregar_base_completa()
 
 if not df.empty and 'Liquidez' in df.columns:
+    # Filtro de Liquidez
     df = df[df['Liquidez'] >= min_liquidez].copy()
     
-    # --- INTERFACE ---
     tab1, tab2, tab3, tab4 = st.tabs(["📋 Visão Geral", "💰 Dividendos", "⚖️ Graham", "✨ Magic Formula"])
 
     with tab1:
         st.subheader("Mercado Completo")
-        cols_view = [c for c in ['Ticker', 'Preco', 'PL', 'PVP', 'DY', 'ROE'] if c in df.columns]
-        st.dataframe(df[cols_view].set_index('Ticker'), use_container_width=True)
+        cols = ['Ticker', 'Preco', 'PL', 'PVP', 'DY', 'ROE', 'Liquidez']
+        st.dataframe(df[cols].set_index('Ticker'), use_container_width=True)
 
     with tab2:
         st.subheader("Top Dividendos")
-        if 'DY' in df.columns:
-            df_div = df.sort_values(by='DY', ascending=False).head(20)
-            st.dataframe(
-                df_div[['Ticker', 'Preco', 'DY', 'PVP']].style
-                .format({'Preco': 'R$ {:.2f}', 'DY': '{:.2f}%', 'PVP': '{:.2f}'})
-                .background_gradient(subset=['DY'], cmap='Greens'),
-                use_container_width=True
-            )
+        top_div = df.sort_values(by='DY', ascending=False).head(20)
+        st.dataframe(top_div[['Ticker', 'Preco', 'DY', 'PVP']].style.format({'Preco':'R$ {:.2f}', 'DY':'{:.2f}%', 'PVP':'{:.2f}'}), use_container_width=True)
 
     with tab3:
-        st.subheader("Ranking Benjamin Graham")
-        if 'Potencial_Graham' in df.columns:
-            df_graham = df[df['Potencial_Graham'] > 0].sort_values(by='Potencial_Graham', ascending=False).head(30)
-            st.dataframe(
-                df_graham[['Ticker', 'Preco', 'Preco_Justo_Graham', 'Potencial_Graham']].style
-                .format({'Preco': 'R$ {:.2f}', 'Preco_Justo_Graham': 'R$ {:.2f}', 'Potencial_Graham': '{:.2f}%'})
-                .bar(subset=['Potencial_Graham'], color='lightgreen'),
-                use_container_width=True
-            )
+        st.subheader("Ranking Graham")
+        graham = df[df['Potencial_Graham'] > 0].sort_values(by='Potencial_Graham', ascending=False).head(30)
+        st.dataframe(graham[['Ticker', 'Preco', 'Preco_Justo_Graham', 'Potencial_Graham']].style.format({'Preco':'R$ {:.2f}', 'Preco_Justo_Graham':'R$ {:.2f}', 'Potencial_Graham':'{:.2f}%'}), use_container_width=True)
 
     with tab4:
-        st.subheader("Ranking Magic Formula")
+        st.subheader("Magic Formula")
         if 'Score_Magic' in df.columns:
-            df_magic_view = df.dropna(subset=['Score_Magic']).sort_values(by='Score_Magic', ascending=True).head(30)
-            st.dataframe(
-                df_magic_view[['Ticker', 'Preco', 'EV_EBIT', 'ROIC', 'Score_Magic']].style
-                .format({'Preco': 'R$ {:.2f}', 'EV_EBIT': '{:.2f}', 'ROIC': '{:.2f}%', 'Score_Magic': '{:.0f}'})
-                .background_gradient(subset=['Score_Magic'], cmap='Blues_r'),
-                use_container_width=True
-            )
+            magic = df.dropna(subset=['Score_Magic']).sort_values(by='Score_Magic').head(30)
+            st.dataframe(magic[['Ticker', 'Preco', 'EV_EBIT', 'ROIC', 'Score_Magic']].style.format({'Preco':'R$ {:.2f}', 'EV_EBIT':'{:.2f}', 'ROIC':'{:.2f}%', 'Score_Magic':'{:.0f}'}), use_container_width=True)
+
 else:
-    st.warning("Aguardando processamento...")
+    st.warning("Carregando base de dados...")
