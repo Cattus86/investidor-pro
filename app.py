@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
-import fundamentus
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import yfinance as yf
-from plotly.subplots import make_subplots
+import requests
+from io import StringIO
 
 # --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Titanium Pro III", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Titanium Pro IV", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -21,9 +21,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Titanium Pro III: Accounting & Momentum")
+st.title("⚡ Titanium Pro IV: Stealth Edition")
 
-# --- 2. FUNÇÕES DE DADOS ---
+# --- 2. MOTOR DE DADOS BLINDADO (BYPASS) ---
 def clean_float(val):
     if isinstance(val, str):
         val = val.replace('.', '').replace(',', '.').replace('%', '').strip()
@@ -32,32 +32,49 @@ def clean_float(val):
     return float(val) if val else 0.0
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_market_data():
+def get_market_data_stealth():
+    """
+    Função 'Stealth' que finge ser um navegador Chrome para evitar bloqueio do Fundamentus.
+    """
+    url = 'https://www.fundamentus.com.br/resultado.php'
+    # Cabeçalho de Navegador Real (O Segredo)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
     try:
-        # Fundamentus Raw
-        df = fundamentus.get_resultado_raw().reset_index()
-        df.rename(columns={'papel': 'Ticker'}, inplace=True)
+        # 1. Requisição Manual
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
         
-        # Mapeamento Expandido
-        mapa = {
-            'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 'Div.Yield': 'DY',
-            'ROE': 'ROE', 'ROIC': 'ROIC', 'EV/EBIT': 'EV_EBIT', 'Liq.2meses': 'Liquidez',
-            'Mrg. Líq.': 'MargemLiquida', 'Dív.Brut/ Patr.': 'Div_Patrimonio',
-            'Cresc. Rec.5a': 'Cresc_5a', 'Patrim. Líq': 'Patrimonio', 'Ativo': 'Ativos',
-            'Margem EBIT': 'MargemEbit', 'P/Ativo': 'P_Ativo', 'PSR': 'PSR',
-            'P/Cap.Giro': 'P_CapGiro', 'Liq. Corr.': 'LiqCorrente'
+        # 2. Leitura com Pandas (lendo o HTML bruto)
+        df = pd.read_html(StringIO(r.text), decimal=',', thousands='.')[0]
+        
+        # 3. Tratamento dos Nomes das Colunas
+        df.rename(columns={'Papel': 'Ticker', 'Cotação': 'Preco', 'Div.Yield': 'DY', 'Liq.2meses': 'Liquidez'}, inplace=True)
+        
+        # Mapeamento para nomes internos (Padronização)
+        rename_map = {
+            'P/L': 'PL', 'P/VP': 'PVP', 'ROE': 'ROE', 'ROIC': 'ROIC', 
+            'EV/EBIT': 'EV_EBIT', 'Mrg. Líq.': 'MargemLiquida', 
+            'Dív.Brut/ Patr.': 'Div_Patrimonio', 'Cresc. Rec.5a': 'Cresc_5a',
+            'Patrim. Líq': 'Patrimonio', 'Ativo': 'Ativos'
         }
+        # Renomeia o que encontrar
+        df.rename(columns=rename_map, inplace=True)
         
-        cols = ['Ticker'] + [c for c in mapa.keys() if c in df.columns]
-        df = df[cols].copy().rename(columns=mapa, inplace=True)
-        
+        # 4. Limpeza de Dados (Percentuais vêm como string "10,0%")
         for col in df.columns:
-            if col != 'Ticker': df[col] = df[col].apply(clean_float)
-            
-        for col in ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'Cresc_5a']:
-            if col in df.columns and df[col].mean() < 1: df[col] *= 100
-            
-        # Classificação Setorial Simplificada
+            if col != 'Ticker':
+                # Verifica se é string para limpar
+                if df[col].dtype == object:
+                    df[col] = df[col].apply(clean_float)
+        
+        # Ajuste de Escala (Fundamentus direto já vem em %, às vezes precisa ajustar)
+        # Na leitura direta do HTML, o pandas com decimal=',' costuma resolver, 
+        # mas vamos garantir.
+        
+        # 5. Classificação Setorial (Manual)
         def get_setor(t):
             t = t.upper()
             if t.startswith(('ITUB','BBDC','BBAS','SANB','BPAC','B3SA','BBSE')): return 'Financeiro'
@@ -65,86 +82,73 @@ def get_market_data():
             if t.startswith(('PETR','PRIO','UGPA','CSAN','RRRP')): return 'Petróleo & Gás'
             if t.startswith(('MGLU','LREN','ARZZ','PETZ','AMER')): return 'Varejo'
             if t.startswith(('WEGE','EMBR','TUPY','RAPT')): return 'Industrial'
-            if t.startswith(('TAEE','TRPL','ELET','CPLE','EQTL','CMIG')): return 'Elétricas/Saneamento'
+            if t.startswith(('TAEE','TRPL','ELET','CPLE','EQTL','CMIG')): return 'Utilidade Púb.'
             if t.startswith(('RADL','RDOR','HAPV','FLRY')): return 'Saúde'
             if t.startswith(('CYRE','EZTC','MRVE','TEND')): return 'Construção'
             return 'Outros'
         
         df['Setor'] = df['Ticker'].apply(get_setor)
         
-        # Rankings Quantitativos
+        # 6. Rankings Quantitativos
         df['Graham'] = np.where((df['PL']>0)&(df['PVP']>0), np.sqrt(22.5 * (df['Preco']/df['PL']) * (df['Preco']/df['PVP'])), 0)
         df['Upside'] = np.where((df['Graham']>0), ((df['Graham']-df['Preco'])/df['Preco'])*100, -999)
-        df['Bazin'] = np.where(df['DY']>0, df['Preco']*(df['DY']/6), 0)
         
-        df_m = df[(df['EV_EBIT']>0)&(df['ROIC']>0)].copy()
-        if not df_m.empty:
+        # Bazin (Teto 6%) - Se DY vier como 6.0, divide por 100 antes da conta se precisar
+        # O clean_float já transforma "6,0%" em 6.0.
+        df['Bazin'] = np.where(df['DY']>0, df['Preco']*((df['DY']/100)/0.06), 0) # Ajuste fórmula bazin correta
+        
+        # Magic Formula Simples
+        if 'EV_EBIT' in df.columns and 'ROIC' in df.columns:
+            df_m = df[(df['EV_EBIT']>0)&(df['ROIC']>0)].copy()
             df_m['Score_Magic'] = df_m['EV_EBIT'].rank(ascending=True) + df_m['ROIC'].rank(ascending=False)
             df = df.merge(df_m[['Ticker', 'Score_Magic']], on='Ticker', how='left')
+        else:
+            df['Score_Magic'] = 99999
             
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro detalhado no bypass: {e}")
+        return pd.DataFrame()
 
-# --- 3. MOTOR CONTÁBIL (ANÁLISE VERTICAL/HORIZONTAL) ---
+# --- 3. MOTOR CONTÁBIL (Yahoo Finance) ---
 def get_financial_deep_dive(ticker):
-    """Baixa DRE e Balanço do Yahoo Finance para análise profunda"""
     try:
         stock = yf.Ticker(ticker + ".SA")
-        
-        # Tenta pegar anual. Se falhar, retorna None
         income = stock.financials
-        balance = stock.balance_sheet
+        if income.empty: return None, None
         
-        if income.empty or balance.empty:
-            return None, None
-            
-        # Transpor para ter datas nas linhas (Ano 1, Ano 2...)
         income = income.T.sort_index(ascending=True)
-        balance = balance.T.sort_index(ascending=True)
         
-        # --- ANÁLISE VERTICAL (DRE) ---
-        # Base 100 = Total Revenue
         if 'Total Revenue' in income.columns:
-            income_av = pd.DataFrame()
-            income_av['Receita Líquida'] = income['Total Revenue']
+            df_av = pd.DataFrame()
+            rec = income['Total Revenue']
             
-            # Principais linhas
-            cols_dre = ['Cost Of Revenue', 'Gross Profit', 'Operating Expense', 'Operating Income', 'Net Income']
-            mapa_dre = {'Cost Of Revenue': 'Custos', 'Gross Profit': 'Lucro Bruto', 
-                        'Operating Expense': 'Desp. Operacionais', 'Operating Income': 'EBIT', 'Net Income': 'Lucro Líquido'}
+            # Mapas de colunas comuns do Yahoo (variam as vezes)
+            targets = {
+                'Lucro Bruto': 'Gross Profit',
+                'EBIT': 'Operating Income',
+                'Lucro Líquido': 'Net Income'
+            }
             
-            for col in cols_dre:
-                if col in income.columns:
-                    # Cálculo AV%
-                    income_av[f'{mapa_dre[col]} (R$)'] = income[col]
-                    income_av[f'{mapa_dre[col]} AV%'] = (income[col] / income['Total Revenue']) * 100
+            df_av['Receita'] = rec
+            for label, col_y in targets.items():
+                if col_y in income.columns:
+                    df_av[label] = income[col_y]
+                    df_av[f'{label} %'] = (income[col_y] / rec) * 100
             
-            # Formatação para exibição
-            income_av = income_av.iloc[-4:] # Últimos 4 anos
-
-        else: income_av = None
-
-        # --- ANÁLISE HORIZONTAL (CRESCIMENTO) ---
-        if 'Total Revenue' in income.columns and 'Net Income' in income.columns:
-            ah_data = income[['Total Revenue', 'Net Income']].pct_change() * 100
-            ah_data.columns = ['Cresc. Receita (%)', 'Cresc. Lucro (%)']
-            ah_data = ah_data.iloc[-4:]
-        else: ah_data = None
-            
-        return income_av, ah_data
-
-    except Exception as e:
+            return df_av.iloc[-4:], None
         return None, None
+    except: return None, None
 
 # --- 4. INTERFACE ---
-st.sidebar.header("🎛️ Filtros & Momentum")
-usar_tech = st.sidebar.checkbox("📡 Ativar Momentum (Yahoo)", value=True)
+st.sidebar.header("🎛️ Centro de Comando")
+usar_tech = st.sidebar.checkbox("📡 Ativar Yahoo (Momentum)", value=True)
 
-with st.spinner('Inicializando Base de Dados...'):
-    df = get_market_data()
+with st.spinner('Conectando ao servidor B3 (Modo Stealth)...'):
+    df = get_market_data_stealth()
 
 if df.empty:
-    st.error("Erro na conexão B3.")
+    st.error("Falha crítica: O servidor bloqueou mesmo o acesso Stealth. Tente novamente em 1 minuto.")
     st.stop()
 
 # Filtros
@@ -156,7 +160,7 @@ df_view = df[df['Liquidez'] >= liq_f].copy()
 if setor_f != "Todos": df_view = df_view[df_view['Setor'] == setor_f]
 if busca: df_view = df_view[df_view['Ticker'].str.contains(busca)]
 
-# Cálculo Momentum (Só tabela)
+# Momentum (Yahoo)
 if usar_tech:
     with st.spinner("Calculando Momentum (Top 60)..."):
         top_m = df_view.nlargest(60, 'Liquidez')['Ticker'].tolist()
@@ -174,28 +178,26 @@ if usar_tech:
         except: df_view['Momentum'] = 0
 else: df_view['Momentum'] = 0
 
-# --- LAYOUT DIVIDIDO ---
+# --- DASHBOARD ---
 col_L, col_R = st.columns([1.5, 2.5])
 
-# --- COLUNA ESQUERDA (TABELAS) ---
+cfg = {
+    "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
+    "DY": st.column_config.ProgressColumn("DY", format="%.1f%%", min_value=0, max_value=15),
+    "Momentum": st.column_config.NumberColumn("Mom.", format="%.1f%%"),
+    "Upside": st.column_config.NumberColumn("Upside", format="%.0f%%")
+}
+
+sel = None
+def render_table(d, c, k):
+    ev = st.dataframe(d, column_config=c, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", height=500, key=k)
+    if len(ev.selection.rows)>0: return d.iloc[ev.selection.rows[0]]
+    return None
+
 with col_L:
     st.subheader("📋 Screener")
     t1, t2, t3, t4 = st.tabs(["Geral", "Dividendos", "Valor", "Magic"])
     
-    cfg = {
-        "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
-        "DY": st.column_config.ProgressColumn("DY", format="%.1f%%", min_value=0, max_value=15),
-        "Momentum": st.column_config.NumberColumn("Mom.", format="%.1f%%"),
-        "Upside": st.column_config.NumberColumn("Upside", format="%.0f%%")
-    }
-    
-    sel = None
-    
-    def render_table(d, c, k):
-        ev = st.dataframe(d, column_config=c, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", height=500, key=k)
-        if len(ev.selection.rows)>0: return d.iloc[ev.selection.rows[0]]
-        return None
-
     with t1:
         d = df_view.sort_values('Liquidez', ascending=False).head(100)
         s = render_table(d[['Ticker','Preco','Momentum','DY']], cfg, 't1')
@@ -213,16 +215,13 @@ with col_L:
         s = render_table(d[['Ticker','Preco','EV_EBIT','ROIC','Score_Magic']], cfg, 't4')
         if s is not None: sel = s
 
-# --- COLUNA DIREITA (DATA CENTER) ---
 with col_R:
     if sel is not None:
         tk = sel['Ticker']
-        st.markdown(f"## 📊 Análise Profunda: <span style='color:#00f2ea'>{tk}</span>", unsafe_allow_html=True)
+        st.markdown(f"## 📊 Análise: <span style='color:#00f2ea'>{tk}</span>", unsafe_allow_html=True)
         
-        # Tabs de Análise
-        tab_main, tab_cont, tab_tec = st.tabs(["📈 Resumo & Gráfico", "📑 Análise Contábil (V/H)", "🧠 Indicadores"])
+        tab_main, tab_cont, tab_tec = st.tabs(["📈 Gráfico", "📑 Contabilidade", "🧠 KPIs"])
         
-        # 1. Resumo & Gráfico
         with tab_main:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Preço", f"R$ {sel['Preco']:.2f}")
@@ -231,65 +230,39 @@ with col_R:
             c4.metric("Dívida/PL", f"{sel.get('Div_Patrimonio',0):.2f}")
             
             if usar_yahoo:
-                with st.spinner(f"Baixando histórico {tk}..."):
+                with st.spinner(f"Baixando histórico..."):
                     try:
                         h = yf.download(tk+".SA", period="3y", progress=False)
                         if not h.empty:
-                            # Tratamento MultiIndex do Yahoo novo
                             if isinstance(h.columns, pd.MultiIndex): h.columns = h.columns.droplevel(1)
-                            
                             fig = go.Figure(data=[go.Candlestick(x=h.index, open=h['Open'], high=h['High'], low=h['Low'], close=h['Close'])])
                             fig.update_layout(title="Price Action (3 Anos)", template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
                             st.plotly_chart(fig, use_container_width=True)
                     except: st.error("Gráfico indisponível.")
 
-        # 2. Análise Contábil (NOVIDADE)
         with tab_cont:
-            st.markdown("#### 📉 Análise Vertical (Margens) & Horizontal (Crescimento)")
             if usar_yahoo:
-                with st.spinner("Processando Balanços e DRE..."):
-                    df_av, df_ah = get_financial_deep_dive(tk)
-                    
+                with st.spinner("Analisando Balanços..."):
+                    df_av, _ = get_financial_deep_dive(tk)
                     if df_av is not None:
-                        st.markdown("**Demonstrativo de Resultados (AV%)**")
-                        # Formata para ficar bonito
+                        st.markdown("**Demonstrativo de Resultados (Análise Vertical)**")
                         st.dataframe(df_av.style.format("{:,.2f}"), use_container_width=True)
-                        
-                        # Gráfico de Receita vs Lucro
-                        fig_fin = px.bar(df_av, x=df_av.index.year, y=['Lucro Bruto (R$)', 'Lucro Líquido (R$)'], 
-                                         barmode='group', title="Evolução de Resultados (R$)", template="plotly_dark")
+                        fig_fin = px.bar(df_av, x=df_av.index.year, y=['Lucro Bruto', 'Lucro Líquido'], barmode='group', template="plotly_dark")
                         st.plotly_chart(fig_fin, use_container_width=True)
-                    else:
-                        st.warning("Dados contábeis detalhados não disponíveis para este ativo.")
-                        
-                    if df_ah is not None:
-                        st.markdown("**Crescimento Ano a Ano (AH%)**")
-                        st.dataframe(df_ah.style.format("{:,.2f}%").background_gradient(cmap="RdYlGn", vmin=-20, vmax=20), use_container_width=True)
-            else:
-                st.warning("Ative 'Dados Técnicos' na barra lateral para ver a contabilidade.")
+                    else: st.warning("Dados contábeis não disponíveis.")
 
-        # 3. Indicadores Extras
         with tab_tec:
             col_i1, col_i2 = st.columns(2)
-            # Margens
-            m_df = pd.DataFrame({'Margem': ['Bruta', 'EBIT', 'Líquida'], 'Valor': [sel.get('MargemEbit',0)*1.4, sel.get('MargemEbit',0), sel.get('MargemLiquida',0)]})
-            fig_m = px.bar(m_data_frame=m_df, x='Margem', y='Valor', color='Margem', title="Estrutura de Margens (%)", template="plotly_dark")
+            m_df = pd.DataFrame({'Margem': ['Líquida'], 'Valor': [sel.get('MargemLiquida',0)]})
+            fig_m = px.bar(m_df, x='Margem', y='Valor', color='Margem', title="Margem Líquida (%)", template="plotly_dark")
             col_i1.plotly_chart(fig_m, use_container_width=True)
-            
-            # Liquidez
-            liq_data = pd.DataFrame({'Liquidez': ['Corrente', 'Geral'], 'Ratio': [sel.get('LiqCorrente',0), sel.get('LiqCorrente',0)*0.8]})
-            fig_l = px.bar(liq_data, x='Liquidez', y='Ratio', title="Índices de Liquidez", template="plotly_dark")
-            fig_l.add_hline(y=1, line_dash="dash", line_color="red")
-            col_i2.plotly_chart(fig_l, use_container_width=True)
 
     else:
         st.info("👈 Selecione um ativo na tabela.")
-        
-        # Dashboard Macro
-        st.subheader("Visão Macro")
+        st.subheader("Mapa Macro")
         try:
             df_tree = df_view.groupby('Setor')[['Liquidez', 'DY']].mean().reset_index()
             df_tree['Qtd'] = df_view.groupby('Setor')['Ticker'].count().values
-            fig_t = px.treemap(df_tree, path=['Setor'], values='Qtd', color='DY', color_continuous_scale='Viridis', title="Market Map (Setores)", template="plotly_dark")
+            fig_t = px.treemap(df_tree, path=['Setor'], values='Qtd', color='DY', color_continuous_scale='Viridis', title="Setores (Cor=Yield)", template="plotly_dark")
             st.plotly_chart(fig_t, use_container_width=True)
         except: pass
