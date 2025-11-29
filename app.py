@@ -1,151 +1,154 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
-import plotly.express as px
 import fundamentus
+import numpy as np
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Investidor Pro | Dashboard", layout="wide")
+st.set_page_config(page_title="Investidor Pro | Quant", layout="wide")
+st.title("⚡ Investidor Pro: Plataforma Quantitativa")
+st.markdown("Análise fundamentalista automatizada de todos os ativos da B3.")
 
-st.title("🏆 Investidor Pro: Monitor de Mercado")
-st.markdown("Monitor de mercado com inteligência de dados híbrida (Fundamentus + Yahoo).")
+# --- BARRA LATERAL (FILTROS GLOBAIS) ---
+st.sidebar.header("🔍 Filtros Globais")
+min_liquidez = st.sidebar.number_input("Liquidez Diária Mínima (R$):", value=200000, step=50000)
 
-# --- BARRA LATERAL ---
-st.sidebar.header("Filtros")
-opcao_carteira = st.sidebar.radio("Visualizar:", ["Minha Carteira", "Top Oportunidades"])
-
-# Lista de ativos padrão
-meus_ativos = ['BBAS3', 'TAEE11', 'VALE3', 'ITSA4', 'CPLE6', 'KLBN11', 
-               'MXRF11', 'HGLG11', 'KNRI11', 'VISC11']
-
-# --- FUNÇÕES DE COLETA DE DADOS ---
-
-def buscar_dados_yfinance_backup(lista_ativos):
-    """
-    MODO DE CONTINGÊNCIA:
-    Se o Fundamentus falhar, usamos o Yahoo Finance para não deixar o site vazio.
-    """
-    dados = []
-    for ticker in lista_ativos:
-        try:
-            # Adiciona .SA para o Yahoo
-            ticker_yahoo = ticker if ".SA" in ticker else f"{ticker}.SA"
-            info = yf.Ticker(ticker_yahoo).info
-            
-            # Coleta segura
-            preco = info.get('currentPrice') or info.get('regularMarketPrice') or 0
-            dy = info.get('dividendYield', 0) * 100
-            pvp = info.get('priceToBook', 0)
-            pl = info.get('trailingPE', 0)
-            roe = info.get('returnOnEquity', 0) * 100
-            
-            dados.append({
-                'Ticker': ticker.replace(".SA", ""),
-                'Preço (R$)': preco,
-                'DY (%)': dy,
-                'P/VP': pvp,
-                'P/L': pl,
-                'ROE (%)': roe,
-                'Fonte': 'Yahoo (Backup)'
-            })
-        except:
-            pass
-    return pd.DataFrame(dados)
-
-@st.cache_data(ttl=3600) # Cache de 1 hora
-def buscar_dados_hibridos():
-    """
-    Tenta pegar do Fundamentus (Oficial). 
-    Se der erro, ativa o plano B (Yahoo).
-    """
+# --- MOTOR DE DADOS E CÁLCULOS ---
+@st.cache_data(ttl=3600)
+def carregar_base_completa():
     try:
-        # TENTATIVA 1: Fundamentus
-        df = fundamentus.get_resultado_raw() # Tenta pegar dados brutos
-        
-        # Se retornou vazio, levanta erro para ir pro except
-        if df.empty:
-            raise Exception("Retorno vazio do Fundamentus")
-
+        # 1. Baixar dados brutos do Fundamentus
+        df = fundamentus.get_resultado()
         df = df.reset_index()
         df.rename(columns={'papel': 'Ticker'}, inplace=True)
         
-        # Tratamento de Colunas (Onde deu o erro antes)
-        # Vamos usar apenas colunas que temos certeza que existem ou tratá-las
-        cols_map = {
-            'Cotação': 'Preço (R$)',
-            'Div.Yield': 'DY (%)',
-            'P/VP': 'P/VP',
-            'P/L': 'P/L',
-            'ROE': 'ROE (%)',
-            'Liq.2meses': 'Liquidez'
-        }
-        
-        # Renomeia o que encontrar
-        df = df.rename(columns=cols_map)
-        
-        # Filtro de Liquidez (Seguro)
-        if 'Liquidez' in df.columns:
-            df = df[df['Liquidez'] > 100000]
-        
-        # Ajuste de Porcentagem (0.12 -> 12.0)
-        cols_percent = ['DY (%)', 'ROE (%)']
+        # 2. Limpeza Inicial
+        # Converter colunas percentuais (que vêm como 0.15 para 15.0)
+        cols_percent = ['Div.Yield', 'ROE', 'ROIC', 'Mrg. Líq.', 'Mrg. Ebit']
         for col in cols_percent:
             if col in df.columns:
                 df[col] = df[col] * 100
-                
-        df['Fonte'] = 'Fundamentus (Oficial)'
+
+        # Renomear colunas para ficar amigável
+        mapa_colunas = {
+            'Cotação': 'Preço',
+            'Liq.2meses': 'Liquidez',
+            'EV/EBIT': 'EV_EBIT'
+        }
+        df = df.rename(columns=mapa_colunas)
+        
+        # 3. Engenharia de Dados (Cálculos Derivados)
+        
+        # --- CÁLCULO DE GRAHAM ---
+        # Graham precisa de LPA (Lucro por Ação) e VPA (Valor Patrimonial por Ação)
+        # Como o fundamentus dá P/L e P/VP, vamos reverter a matemática:
+        # LPA = Preço / PL
+        # VPA = Preço / PVP
+        
+        df['LPA'] = np.where(df['P/L'] != 0, df['Preço'] / df['P/L'], 0)
+        df['VPA'] = np.where(df['P/VP'] != 0, df['Preço'] / df['P/VP'], 0)
+        
+        def calcular_graham(row):
+            if row['LPA'] > 0 and row['VPA'] > 0:
+                return np.sqrt(22.5 * row['LPA'] * row['VPA'])
+            return 0
+            
+        df['Preço Justo Graham'] = df.apply(calcular_graham, axis=1)
+        df['Potencial Graham (%)'] = np.where(
+            (df['Preço Justo Graham'] > 0) & (df['Preço'] > 0),
+            ((df['Preço Justo Graham'] - df['Preço']) / df['Preço']) * 100,
+            -999 # Valor baixo para ficar no fim da fila
+        )
+
+        # --- CÁLCULO MAGIC FORMULA (Greenblatt) ---
+        # 1. Ranking de EV/EBIT (Menor é melhor) -> Barato
+        # 2. Ranking de ROIC (Maior é melhor) -> Qualidade
+        
+        # Filtra apenas empresas com dados válidos para Magic Formula
+        df_magic = df[(df['EV_EBIT'] > 0) & (df['ROIC'] > 0)].copy()
+        
+        df_magic['Rank_EV_EBIT'] = df_magic['EV_EBIT'].rank(ascending=True)
+        df_magic['Rank_ROIC'] = df_magic['ROIC'].rank(ascending=False)
+        df_magic['Score_Magic'] = df_magic['Rank_EV_EBIT'] + df_magic['Rank_ROIC']
+        
+        # Traz o Score de volta para o dataframe principal
+        df = df.merge(df_magic[['Ticker', 'Score_Magic']], on='Ticker', how='left')
+
         return df
 
     except Exception as e:
-        # TENTATIVA 2: Plano B (Yahoo Finance)
-        # st.warning(f"Nota: Usando dados alternativos devido a instabilidade na fonte oficial. Erro: {e}")
-        return buscar_dados_yfinance_backup(meus_ativos)
+        st.error(f"Erro crítico ao processar dados: {e}")
+        return pd.DataFrame()
 
-# --- INTERFACE ---
-if st.button('🔄 Atualizar Dados'):
-    with st.spinner('Analisando o mercado...'):
-        df_final = buscar_dados_hibridos()
+# --- CARREGAMENTO ---
+with st.spinner('Baixando e processando todos os ativos da B3...'):
+    df_raw = carregar_base_completa()
+
+if not df_raw.empty:
+    # Aplica Filtro de Liquidez Global
+    df = df_raw[df_raw['Liquidez'] >= min_liquidez].copy()
+    
+    st.success(f"Base carregada com sucesso! {len(df)} ativos analisados após filtro de liquidez.")
+
+    # --- INTERFACE DE ABAS ---
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Visão Geral", "💰 Dividendos", "⚖️ Graham (Valor)", "✨ Fórmula Mágica"])
+
+    # --- ABA 1: VISÃO GERAL (Todos os indicadores) ---
+    with tab1:
+        st.subheader("Screener Completo")
+        st.write("Explore todos os indicadores fundamentalistas.")
         
-        if not df_final.empty:
-            
-            # Filtros de visualização
-            if opcao_carteira == "Minha Carteira":
-                df_display = df_final[df_final['Ticker'].isin(meus_ativos)].copy()
-            else:
-                df_display = df_final.sort_values(by='DY (%)', ascending=False).head(15).copy()
-            
-            # --- DASHBOARD ---
-            
-            # Métricas
-            col1, col2, col3 = st.columns(3)
-            top_asset = df_display.sort_values(by='DY (%)', ascending=False).iloc[0]
-            
-            col1.metric("Maior Pagador", top_asset['Ticker'], f"{top_asset['DY (%)']:.2f}%")
-            col2.metric("Média P/VP", f"{df_display['P/VP'].mean():.2f}")
-            col3.caption(f"Fonte dos Dados: {df_display['Fonte'].iloc[0]}")
-            
-            st.markdown("---")
-            
-            # Gráficos e Tabelas
-            col_graf, col_tab = st.columns([1, 1])
-            
-            with col_graf:
-                fig = px.bar(df_display, x='Ticker', y='DY (%)', color='P/VP',
-                             title="Dividend Yield x Preço (Cor = P/VP)",
-                             color_continuous_scale='RdYlGn_r')
-                st.plotly_chart(fig, use_container_width=True)
-                
-            with col_tab:
-                # Formatação da Tabela
-                st.dataframe(
-                    df_display[['Ticker', 'Preço (R$)', 'DY (%)', 'P/VP', 'P/L']].style
-                    .format("{:.2f}", subset=['Preço (R$)', 'DY (%)', 'P/VP', 'P/L'])
-                    .highlight_max(subset=['DY (%)'], color='lightgreen'),
-                    use_container_width=True,
-                    height=400
-                )
-                
-        else:
-            st.error("Não foi possível conectar a nenhuma fonte de dados no momento.")
+        # Seleção de colunas para não ficar gigante
+        cols_padrao = ['Ticker', 'Preço', 'P/L', 'P/VP', 'Div.Yield', 'ROE', 'Liquidez', 'Dív.Brut/ Patr.']
+        all_cols = df.columns.tolist()
+        cols_visiveis = st.multiselect("Colunas Visíveis:", all_cols, default=cols_padrao)
+        
+        st.dataframe(df[cols_visiveis].set_index('Ticker'), use_container_width=True, height=600)
+
+    # --- ABA 2: DIVIDENDOS (Ranking) ---
+    with tab2:
+        st.subheader("🏆 Top Pagadoras de Dividendos")
+        st.caption("Empresas ordenadas pelo Dividend Yield dos últimos 12 meses.")
+        
+        df_div = df.sort_values(by='Div.Yield', ascending=False).head(20)
+        
+        st.dataframe(
+            df_div[['Ticker', 'Preço', 'Div.Yield', 'P/VP', 'Liquidez']].style
+            .format({'Preço': 'R$ {:.2f}', 'Div.Yield': '{:.2f}%', 'P/VP': '{:.2f}'})
+            .background_gradient(subset=['Div.Yield'], cmap='Greens'),
+            use_container_width=True
+        )
+
+    # --- ABA 3: GRAHAM (Valuation Clássico) ---
+    with tab3:
+        st.subheader("💎 Oportunidades Segundo Benjamin Graham")
+        st.markdown(r"Filtro baseado na fórmula: $V = \sqrt{22.5 \times LPA \times VPA}$")
+        st.caption("Mostrando apenas ativos com Potencial positivo (> 0%). Cuidado com 'Bull Traps' (empresas quebradas).")
+        
+        # Filtra apenas quem tem margem positiva
+        df_graham = df[df['Potencial Graham (%)'] > 0].sort_values(by='Potencial Graham (%)', ascending=False)
+        
+        st.dataframe(
+            df_graham[['Ticker', 'Preço', 'Preço Justo Graham', 'Potencial Graham (%)', 'P/L', 'P/VP']].head(30).style
+            .format({'Preço': 'R$ {:.2f}', 'Preço Justo Graham': 'R$ {:.2f}', 'Potencial Graham (%)': '{:.2f}%'})
+            .bar(subset=['Potencial Graham (%)'], color='lightgreen'),
+            use_container_width=True
+        )
+
+    # --- ABA 4: FÓRMULA MÁGICA (Greenblatt) ---
+    with tab4:
+        st.subheader("✨ Ranking da Fórmula Mágica")
+        st.markdown("**Estratégia:** Comprar empresas *boas* (Alto ROIC) a preços *baratos* (Baixo EV/EBIT).")
+        st.caption("Quanto menor o 'Score Magic', melhor a classificação.")
+        
+        # Filtra nulos e ordena pelo Score (Menor é melhor)
+        df_magic_view = df.dropna(subset=['Score_Magic']).sort_values(by='Score_Magic', ascending=True).head(30)
+        
+        st.dataframe(
+            df_magic_view[['Ticker', 'Preço', 'EV_EBIT', 'ROIC', 'Score_Magic']].style
+            .format({'Preço': 'R$ {:.2f}', 'EV_EBIT': '{:.2f}', 'ROIC': '{:.2f}%', 'Score_Magic': '{:.0f}'})
+            .background_gradient(subset=['Score_Magic'], cmap='Blues_r'), # Invertido: azul escuro para os primeiros
+            use_container_width=True
+        )
+
 else:
-    st.info("Clique no botão para carregar o painel.")
+    st.warning("Aguardando carregamento dos dados...")
