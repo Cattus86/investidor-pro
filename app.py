@@ -5,125 +5,143 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import yfinance as yf
+from datetime import datetime
 
-# --- 1. CONFIGURAÇÃO VISUAL PROFISSIONAL ---
-st.set_page_config(page_title="Investidor Pro | Titanium", layout="wide", initial_sidebar_state="expanded")
+# --- 1. CONFIGURAÇÃO VISUAL ---
+st.set_page_config(page_title="Investidor Pro | Ultimate", layout="wide", initial_sidebar_state="expanded")
 
+# CSS para visual profissional (Dark Theme refinado)
 st.markdown("""
 <style>
-    /* Estilo Dark Mode Profissional */
     .stApp { background-color: #0e1117; }
-    [data-testid="stMetricValue"] { font-size: 1.4rem; color: #00c853; }
-    /* Abas customizadas */
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    [data-testid="stMetricValue"] { font-size: 1.2rem; color: #00e676; }
+    .stTabs [data-baseweb="tab-list"] { gap: 5px; }
     .stTabs [data-baseweb="tab"] {
-        background-color: #1f2937; color: #e5e7eb; border-radius: 4px; padding: 10px 20px;
+        height: 40px; white-space: pre-wrap; background-color: #1f2937; color: #aaa; border-radius: 4px; font-size: 14px;
     }
-    .stTabs [aria-selected="true"] { background-color: #00c853 !important; color: white !important; }
-    /* Painel Lateral */
-    section[data-testid="stSidebar"] { background-color: #111827; }
+    .stTabs [aria-selected="true"] { background-color: #00e676 !important; color: black !important; font-weight: bold; }
+    hr { margin-top: 0.5rem; margin-bottom: 0.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 Investidor Pro: Titanium Edition")
-st.markdown("##### Plataforma Quantitativa: Fundamentalismo + Momentum + Setores")
+st.title("💎 Investidor Pro: Ultimate Edition")
+st.markdown("##### Terminal de Análise Quantitativa Completa")
 
-# --- 2. MAPA DE SETORES ---
+# --- 2. MAPAS E CONSTANTES ---
 MAPA_SETORES = {
     'Bancos': ['BBAS3', 'ITUB4', 'BBDC4', 'SANB11', 'BPAC11', 'ABCB4', 'BRSR6', 'ITSA4', 'BBSE3', 'CXSE3'],
-    'Energia': ['PETR4', 'PETR3', 'PRIO3', 'VBBR3', 'UGPA3', 'CSAN3', 'ENAT3', 'RRRP3', 'RECV3'],
-    'Elétricas': ['ELET3', 'ELET6', 'EGIE3', 'TRPL4', 'TAEE11', 'CPLE6', 'CMIG4', 'EQTL3', 'LIGT3', 'NEOE3', 'ALUP11'],
-    'Mineração/Sid': ['VALE3', 'CSNA3', 'GGBR4', 'GOAU4', 'USIM5', 'CMIN3', 'FESA4'],
-    'Varejo': ['MGLU3', 'LREN3', 'ARZZ3', 'SOMA3', 'PETZ3', 'RDOR3', 'RADL3', 'AMER3', 'BHIA3'],
-    'Bens Ind.': ['WEGE3', 'EMBR3', 'TUPY3', 'RAPT4', 'POMO4'],
-    'Construção': ['CYRE3', 'EZTC3', 'MRVE3', 'TEND3', 'JHSF3'],
-    'Saneamento': ['SBSP3', 'CSMG3', 'SAPR11', 'SAPR4'],
-    'Agronegócio': ['SLCE3', 'AGRO3', 'SOJA3', 'TTEN3'],
-    'Seguros': ['BBSE3', 'CXSE3', 'PSSA3', 'SULA11'],
-    'Imobiliário': ['MULT3', 'IGTI11', 'ALSO3']
+    'Energia': ['PETR4', 'PETR3', 'PRIO3', 'VBBR3', 'UGPA3', 'CSAN3', 'ENAT3', 'RRRP3', 'RECV3', 'BRAV3'],
+    'Elétricas': ['ELET3', 'ELET6', 'EGIE3', 'TRPL4', 'TAEE11', 'CPLE6', 'CMIG4', 'EQTL3', 'LIGT3', 'NEOE3', 'ALUP11', 'AURE3'],
+    'Mineração/Sid': ['VALE3', 'CSNA3', 'GGBR4', 'GOAU4', 'USIM5', 'CMIN3', 'FESA4', 'CBAV3'],
+    'Varejo': ['MGLU3', 'LREN3', 'ARZZ3', 'SOMA3', 'PETZ3', 'RDOR3', 'RADL3', 'AMER3', 'BHIA3', 'CEAB3', 'GUAR3'],
+    'Indústria/Bens': ['WEGE3', 'EMBR3', 'TUPY3', 'RAPT4', 'POMO4', 'SHUL4', 'KEPL3'],
+    'Construção': ['CYRE3', 'EZTC3', 'MRVE3', 'TEND3', 'JHSF3', 'DIRR3', 'CURY3'],
+    'Saneamento': ['SBSP3', 'CSMG3', 'SAPR11', 'SAPR4', 'AMBP3'],
+    'Agronegócio': ['SLCE3', 'AGRO3', 'SOJA3', 'TTEN3', 'SMTO3'],
+    'Telecom/Tech': ['VIVT3', 'TIMS3', 'LWSA3', 'INTB3', 'TOTS3'],
+    'Logística': ['STBP3', 'HBSA3', 'RAIL3']
 }
 
 def obter_setor(ticker):
-    ticker_clean = ticker.upper().strip()
-    for setor, lista in MAPA_SETORES.items():
-        if ticker_clean in lista:
-            return setor
-    return "Outros / Geral"
+    t = ticker.upper().strip()
+    for s, l in MAPA_SETORES.items():
+        if t in l: return s
+    return "Outros"
 
-# --- 3. MOTOR DE DADOS HÍBRIDO ---
-def limpar_numero(valor):
-    if isinstance(valor, str):
-        valor = valor.replace('.', '').replace(',', '.').replace('%', '').strip()
-        try: return float(valor)
+def limpar_coluna(val):
+    if isinstance(val, str):
+        val = val.replace('.', '').replace(',', '.').replace('%', '').strip()
+        try: return float(val)
         except: return 0.0
-    return float(valor) if valor else 0.0
+    return float(val) if val else 0.0
 
-@st.cache_data(ttl=600, show_spinner=False)
-def carregar_dados_completo():
+# --- 3. MOTOR DE DADOS ---
+@st.cache_data(ttl=900, show_spinner=False)
+def baixar_fundamentus():
     try:
-        # A. DADOS FUNDAMENTALISTAS
         df = fundamentus.get_resultado_raw().reset_index()
         df.rename(columns={'papel': 'Ticker'}, inplace=True)
         
+        # Mapeamento EXTENSIVO (Todos os indicadores relevantes)
         mapa = {
-            'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 'Div.Yield': 'DY',
-            'ROE': 'ROE', 'ROIC': 'ROIC', 'EV/EBIT': 'EV_EBIT',
-            'Liq.2meses': 'Liquidez', 'Mrg. Líq.': 'MargemLiquida',
-            'Dív.Brut/ Patr.': 'Div_Patrimonio'
+            'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 'PSR': 'PSR',
+            'Div.Yield': 'DY', 'P/Ativo': 'P_Ativo', 'P/Cap.Giro': 'P_CapGiro',
+            'P/EBIT': 'P_EBIT', 'P/Ativ Circ Liq': 'P_AtivCircLiq',
+            'EV/EBIT': 'EV_EBIT', 'EV/EBITDA': 'EV_EBITDA',
+            'Mrg Ebit': 'MargemEbit', 'Mrg. Líq.': 'MargemLiquida',
+            'Liq. Corr.': 'LiqCorrente', 'ROIC': 'ROIC', 'ROE': 'ROE',
+            'Liq.2meses': 'Liquidez', 'Patrim. Líq': 'Patrimonio',
+            'Dív.Brut/ Patr.': 'Div_Patrimonio', 'Cresc. Rec.5a': 'Cresc_5a'
         }
-        cols = ['Ticker'] + [c for c in mapa.keys() if c in df.columns]
-        df = df[cols].copy()
+        
+        # Seleciona e renomeia
+        cols_existentes = ['Ticker'] + [c for c in mapa.keys() if c in df.columns]
+        df = df[cols_existentes].copy()
         df.rename(columns=mapa, inplace=True)
         
+        # Limpeza Numérica
         for col in df.columns:
-            if col != 'Ticker': df[col] = df[col].apply(limpar_numero)
+            if col != 'Ticker': df[col] = df[col].apply(limpar_coluna)
             
-        for col in ['DY', 'ROE', 'MargemLiquida']:
+        # Ajuste Percentual
+        for col in ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'MargemEbit', 'Cresc_5a']:
             if col in df.columns and df[col].mean() < 1: df[col] *= 100
-
-        # B. ENRIQUECIMENTO
+            
         df['Setor'] = df['Ticker'].apply(obter_setor)
-
         return df
     except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
+        st.error(f"Erro Fundamentus: {e}")
         return pd.DataFrame()
 
-def calcular_momentum_lote(df_filtrado):
-    tickers = [t + ".SA" for t in df_filtrado['Ticker'].tolist()]
-    if not tickers: return df_filtrado
+@st.cache_data(ttl=1800, show_spinner=False)
+def calcular_metricas_tecnicas(df_base):
+    # Otimização: Baixar dados técnicos apenas das Top 150 mais líquidas para não travar
+    # (Usuários geralmente não querem ver gráfico de mico sem liquidez)
+    df_top = df_base.nlargest(150, 'Liquidez').copy()
+    tickers = [t + ".SA" for t in df_top['Ticker'].tolist()]
     
+    if not tickers: return df_base
+
     try:
-        # Baixa histórico em lote
-        dados_hist = yf.download(tickers, period="6mo", progress=False)['Adj Close']
+        # Baixa 1 ano para calcular Volatilidade (StdDev) e Momentum
+        dados = yf.download(tickers, period="1y", progress=False)['Adj Close']
         
-        if not dados_hist.empty:
-            momentum_dict = {}
-            # Itera sobre as colunas (que são os tickers)
-            # Se for apenas um ticker, dados_hist pode ser uma Series, não DataFrame
-            if isinstance(dados_hist, pd.Series):
-                dados_hist = dados_hist.to_frame(name=tickers[0])
-
-            for t in dados_hist.columns: 
-                try:
-                    serie = dados_hist[t].dropna()
-                    if len(serie) > 10:
-                        preco_ini = serie.iloc[0]
-                        preco_fim = serie.iloc[-1]
-                        retorno = ((preco_fim - preco_ini) / preco_ini) * 100
-                        # Remove o .SA para mapear de volta
-                        ticker_key = t.replace('.SA', '')
-                        momentum_dict[ticker_key] = retorno
-                except:
-                    pass
+        if isinstance(dados, pd.Series): dados = dados.to_frame() # Correção bug 1 ticker
+        
+        res = {}
+        for t_full in dados.columns:
+            t_clean = t_full.replace('.SA', '')
+            serie = dados[t_full].dropna()
             
-            df_filtrado['Momentum_6M'] = df_filtrado['Ticker'].map(momentum_dict).fillna(0)
-    except:
-        df_filtrado['Momentum_6M'] = 0.0
+            if len(serie) > 20:
+                # 1. Momentum (6 Meses)
+                try:
+                    p_atual = serie.iloc[-1]
+                    # Pega preço de ~126 dias úteis atrás (6 meses)
+                    idx_6m = max(0, len(serie) - 126)
+                    p_antigo = serie.iloc[idx_6m]
+                    mom = ((p_atual - p_antigo) / p_antigo) * 100
+                except: mom = 0
+                
+                # 2. Volatilidade Anualizada
+                try:
+                    retornos = serie.pct_change().dropna()
+                    vol = retornos.std() * np.sqrt(252) * 100 # Anualizado em %
+                except: vol = 0
+                
+                res[t_clean] = {'Momentum': mom, 'Volatilidade': vol}
         
-    return df_filtrado
+        # Incorpora ao DataFrame
+        df_base['Momentum'] = df_base['Ticker'].map(lambda x: res.get(x, {}).get('Momentum', 0))
+        df_base['Volatilidade'] = df_base['Ticker'].map(lambda x: res.get(x, {}).get('Volatilidade', 0))
+        
+    except:
+        df_base['Momentum'] = 0.0
+        df_base['Volatilidade'] = 0.0
+        
+    return df_base
 
-def calcular_kpis(df):
+def calcular_rankings(df):
     # Graham
     df['LPA'] = np.where(df['PL']!=0, df['Preco']/df['PL'], 0)
     df['VPA'] = np.where(df['PVP']!=0, df['Preco']/df['PVP'], 0)
@@ -141,184 +159,19 @@ def calcular_kpis(df):
         df = df.merge(df_m[['Ticker', 'Score_Magic']], on='Ticker', how='left')
     else:
         df['Score_Magic'] = 99999
-        
+    
     # Bazin
     df['Bazin'] = np.where(df['DY']>0, df['Preco']*(df['DY']/6), 0)
+    
     return df
 
-# --- 4. ANALISTA AUTOMÁTICO ---
-def analisar(row):
+# --- 4. CÉREBRO DA ANÁLISE ---
+def analisar_ativo_ia(row):
     score = 5
     txt = []
     
-    # Fundamentalismo
-    if row['DY'] > 9: txt.append("🟢 **Yield:** Excelente (>9%)."); score += 2
-    elif row['DY'] < 3: txt.append("⚪ **Yield:** Baixo."); score -= 1
+    # Valuation
+    if row['PL'] < 5 and row['PL'] > 0: txt.append("🟢 **Valuation:** Muito barato (P/L < 5)."); score += 2
+    elif row['PL'] > 30: txt.append("🔴 **Valuation:** Caro (P/L > 30)."); score -= 2
     
-    if row['PL'] < 5 and row['PL'] > 0: txt.append("🟢 **P/L:** Muito descontado."); score += 2
-    elif row['PL'] > 20: txt.append("🔴 **P/L:** Preço esticado."); score -= 1
-    
-    if row['ROE'] > 15: txt.append("🔥 **ROE:** Alta rentabilidade."); score += 2
-    
-    # Momentum
-    mom = row.get('Momentum_6M', 0)
-    if mom > 20: txt.append(f"🚀 **Momentum:** Forte tendência de alta (+{mom:.1f}% em 6m)."); score += 2
-    elif mom < -10: txt.append(f"🐻 **Momentum:** Tendência de baixa ({mom:.1f}% em 6m)."); score -= 2
-    
-    return score, "\n\n".join(txt)
-
-# --- 5. INTERFACE ---
-with st.spinner('Carregando dados da B3...'):
-    df_full = carregar_dados_completo()
-
-if not df_full.empty:
-    df = calcular_kpis(df_full)
-    
-    # --- SIDEBAR (FILTROS) ---
-    st.sidebar.header("🔍 Filtros & Setores")
-    
-    setores_disponiveis = ["Todos"] + sorted(list(set(df['Setor'].unique())))
-    setor_selecionado = st.sidebar.selectbox("Filtrar por Setor:", setores_disponiveis)
-    
-    # CORREÇÃO DO ERRO DE VALUE ERROR:
-    # A lista de options DEVE conter o valor padrão (200000)
-    liq_min = st.sidebar.select_slider(
-        "Liquidez Mínima:", 
-        options=[0, 50000, 200000, 1000000, 5000000], 
-        value=200000
-    )
-    
-    # Aplicação dos Filtros
-    df_view = df[df['Liquidez'] >= liq_min].copy()
-    if setor_selecionado != "Todos":
-        df_view = df_view[df_view['Setor'] == setor_selecionado]
-        
-    # --- CÁLCULO DE MOMENTUM (ON-DEMAND) ---
-    with st.spinner('Calculando Momentum (Yahoo Finance)...'):
-        # Limita a 80 papéis para não estourar o tempo de requisição
-        if len(df_view) > 80:
-            # Prioriza as mais líquidas para calcular momentum
-            df_calc = df_view.nlargest(80, 'Liquidez')
-            # Mantém as outras sem momentum calculado (0)
-            df_resto = df_view[~df_view['Ticker'].isin(df_calc['Ticker'])]
-            
-            df_calc = calcular_momentum_lote(df_calc)
-            df_view = pd.concat([df_calc, df_resto])
-        else:
-            df_view = calcular_momentum_lote(df_view)
-
-    # --- DASHBOARD KPI ---
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ações Filtradas", len(df_view))
-    
-    if len(df_view) > 0:
-        c2.metric("Yield Médio", f"{df_view[df_view['DY']>0]['DY'].mean():.2f}%")
-        c3.metric("P/L Médio", f"{df_view[(df_view['PL']>0)&(df_view['PL']<50)]['PL'].mean():.1f}x")
-        try:
-            top_setor = df_view.groupby('Setor')['Momentum_6M'].mean().idxmax()
-            mom_setor = df_view.groupby('Setor')['Momentum_6M'].mean().max()
-            c4.metric(f"Setor Quente: {top_setor}", f"+{mom_setor:.1f}%")
-        except:
-            c4.metric("Setor Quente", "N/A")
-    else:
-        st.warning("Nenhuma ação encontrada com esses filtros.")
-
-    st.divider()
-
-    # --- ÁREA PRINCIPAL ---
-    col_table, col_detail = st.columns([2, 1])
-    
-    if 'sel' not in st.session_state: st.session_state['sel'] = None
-    
-    def on_sel(evt, df_ref):
-        if len(evt.selection.rows)>0:
-            # Como o df visual pode estar filtrado/ordenado, usamos iloc no df de referencia
-            st.session_state['sel'] = df_ref.iloc[evt.selection.rows[0]]
-
-    cfg = {
-        "Preco": st.column_config.NumberColumn("R$", format="R$ %.2f"),
-        "Momentum_6M": st.column_config.ProgressColumn("Momentum (6m)", format="%.1f%%", min_value=-30, max_value=30),
-        "DY": st.column_config.ProgressColumn("Yield", format="%.1f%%", min_value=0, max_value=15),
-        "Graham": st.column_config.NumberColumn("Preço Justo", format="R$ %.2f"),
-        "Score_Magic": st.column_config.NumberColumn("Score", format="%d")
-    }
-
-    with col_table:
-        t1, t2, t3, t4 = st.tabs(["🚀 Momentum", "💰 Dividendos", "💎 Valor", "📈 Setores"])
-        
-        with t1:
-            st.caption("Ações com maior valorização recente (Tendência).")
-            df_mom = df_view.sort_values(by='Momentum_6M', ascending=False).head(50)
-            ev = st.dataframe(df_mom[['Ticker', 'Setor', 'Preco', 'Momentum_6M', 'PL']], 
-                         column_config=cfg, hide_index=True, use_container_width=True, 
-                         on_select="rerun", selection_mode="single-row", height=450)
-            on_sel(ev, df_mom)
-            
-        with t2:
-            df_div = df_view.nlargest(50, 'DY')
-            ev = st.dataframe(df_div[['Ticker', 'Setor', 'Preco', 'DY', 'Bazin']], 
-                         column_config=cfg, hide_index=True, use_container_width=True, 
-                         on_select="rerun", selection_mode="single-row", height=450)
-            on_sel(ev, df_div)
-            
-        with t3:
-            df_val = df_view[(df_view['Upside_Graham']>0) & (df_view['Upside_Graham']<500)].nlargest(50, 'Upside_Graham')
-            ev = st.dataframe(df_val[['Ticker', 'Preco', 'Graham', 'Upside_Graham', 'PL']], 
-                         column_config={"Upside_Graham": st.column_config.NumberColumn("Potencial %", format="%.1f%%"), **cfg}, 
-                         hide_index=True, use_container_width=True, 
-                         on_select="rerun", selection_mode="single-row", height=450)
-            on_sel(ev, df_val)
-
-        with t4:
-            st.subheader("Performance por Setor")
-            if len(df_view) > 0:
-                df_setor = df_view.groupby('Setor')[['DY', 'PL', 'Momentum_6M']].mean().reset_index()
-                fig_bar = px.bar(df_setor, x='Momentum_6M', y='Setor', orientation='h', title="Momentum Médio", color='Momentum_6M', color_continuous_scale='RdYlGn')
-                st.plotly_chart(fig_bar, use_container_width=True)
-
-    # --- PAINEL DETALHES ---
-    with col_detail:
-        st.markdown("### 📊 Raio-X do Ativo")
-        if st.session_state['sel'] is not None:
-            row = st.session_state['sel']
-            score, txt = analisar(row)
-            
-            st.markdown(f"# {row['Ticker']}")
-            st.caption(f"Setor: {row['Setor']}")
-            
-            c_p, c_m = st.columns(2)
-            c_p.metric("Preço", f"R$ {row['Preco']:.2f}")
-            
-            # Tratamento seguro para momentum se não existir
-            mom_val = row.get('Momentum_6M', 0)
-            c_m.metric("Tendência (6m)", f"{mom_val:.1f}%", delta_color="normal")
-            
-            st.divider()
-            st.metric("Score Robô", f"{score}/10")
-            st.info(txt)
-            
-            st.divider()
-            
-            # Gráfico Histórico
-            try:
-                with st.spinner('Baixando gráfico...'):
-                    # Adiciona .SA para Yahoo Finance
-                    t_yahoo = row['Ticker']
-                    if not t_yahoo.endswith('.SA'): t_yahoo += ".SA"
-                    
-                    hist = yf.Ticker(t_yahoo).history(period="1y")
-                    if not hist.empty:
-                        fig_line = px.area(hist, y="Close", title="Preço (1 Ano)")
-                        fig_line.update_layout(showlegend=False, margin=dict(l=0,r=0,t=30,b=0), height=200)
-                        fig_line.update_xaxes(visible=False)
-                        st.plotly_chart(fig_line, use_container_width=True)
-                    else:
-                        st.warning("Sem dados históricos recentes.")
-            except:
-                st.write("Gráfico indisponível.")
-                
-        else:
-            st.info("👈 Selecione uma ação na tabela para ver a análise.")
-
-else:
-    st.error("Erro ao conectar.")
+    if row['PVP'] < 0.8 and row['PVP'] > 0: txt.append
