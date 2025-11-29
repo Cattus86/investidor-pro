@@ -6,68 +6,45 @@ import plotly.express as px
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Investidor Pro | Enterprise", layout="wide")
-
 st.title("🚀 Investidor Pro: Enterprise Edition")
-st.markdown("### Plataforma de Análise Fundamentalista")
 
-# --- MOTOR DE DADOS & LIMPEZA ---
-
+# --- MOTOR DE DADOS ---
 @st.cache_data(ttl=300)
 def carregar_dados():
     try:
-        # 1. Busca dados brutos (Raw)
-        df = fundamentus.get_resultado_raw()
-        df = df.reset_index()
+        # 1. Coleta e Tratamento Inicial
+        df = fundamentus.get_resultado_raw().reset_index()
         df.rename(columns={'papel': 'Ticker'}, inplace=True)
         
-        # 2. Padronização de Colunas (Minúsculo e sem caracteres especiais)
+        # 2. Padronização de Colunas
         df.columns = [c.replace('.', '').replace('/', '').replace(' ', '').lower() for c in df.columns]
         
-        # 3. Mapa de Tradução (Do Fundamentus para nosso Padrão)
         mapa = {
-            'papel': 'Ticker',
-            'ticker': 'Ticker',
-            'cotacao': 'Preco',
-            'pl': 'PL',
-            'pvp': 'PVP',
-            'dy': 'DY',
-            'divyield': 'DY',
-            'roe': 'ROE',
-            'roic': 'ROIC',
-            'evebit': 'EV_EBIT',
-            'liq2meses': 'Liquidez',
-            'liq2m': 'Liquidez',
-            'mrglíq': 'MargemLiquida',
-            'mrgliq': 'MargemLiquida',
-            'divbrutpatr': 'Div_Patrimonio'
+            'papel': 'Ticker', 'ticker': 'Ticker', 'cotacao': 'Preco',
+            'pl': 'PL', 'pvp': 'PVP', 'dy': 'DY', 'divyield': 'DY',
+            'roe': 'ROE', 'roic': 'ROIC', 'evebit': 'EV_EBIT',
+            'liq2meses': 'Liquidez', 'liq2m': 'Liquidez',
+            'mrglíq': 'MargemLiquida', 'mrgliq': 'MargemLiquida'
         }
-        
-        # Renomeia o que encontrar
         df = df.rename(columns=mapa)
         
-        # 4. Forçar Numérico (O Segredo para não travar)
-        cols_numericas = ['Preco', 'PL', 'PVP', 'DY', 'ROE', 'ROIC', 'EV_EBIT', 'Liquidez', 'MargemLiquida', 'Div_Patrimonio']
-        
-        for col in cols_numericas:
-            if col not in df.columns:
-                df[col] = 0.0 # Cria coluna zerada se não existir
-            
-            # Força conversão para números (erros viram NaN)
+        # 3. Forçar Numérico e Limpar
+        cols_num = ['Preco', 'PL', 'PVP', 'DY', 'ROE', 'ROIC', 'EV_EBIT', 'Liquidez', 'MargemLiquida']
+        for col in cols_num:
+            if col not in df.columns: df[col] = 0.0
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
-        # 5. Ajuste de Escala (Decimal para Percentual)
-        # Se a média do DY for menor que 1 (ex: 0.06), multiplica por 100
-        if df['DY'].mean() < 1: df['DY'] = df['DY'] * 100
-        if df['ROE'].mean() < 1: df['ROE'] = df['ROE'] * 100
-        if df['ROIC'].mean() < 1: df['ROIC'] = df['ROIC'] * 100
+        # 4. Ajustes Percentuais
+        if df['DY'].mean() < 1: df['DY'] *= 100
+        if df['ROE'].mean() < 1: df['ROE'] *= 100
+        if df['ROIC'].mean() < 1: df['ROIC'] *= 100
         
         return df
-
     except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
+        st.error(f"Erro no motor de dados: {e}")
         return pd.DataFrame()
 
-# --- CÁLCULOS ESTRATÉGICOS ---
+# --- MOTOR DE ESTRATÉGIAS ---
 def processar_estrategias(df):
     # Graham
     df['LPA'] = np.where(df['PL'] != 0, df['Preco'] / df['PL'], 0)
@@ -93,83 +70,100 @@ def processar_estrategias(df):
     else:
         df['Score_Magic'] = 99999
 
-    # Bazin (Preço Teto 6%)
+    # Bazin (Teto 6%)
     df['Bazin_Teto'] = np.where(df['DY'] > 0, df['Preco'] * (df['DY'] / 6), 0)
     
     return df
 
-# --- INTERFACE ---
-with st.spinner('Analisando mercado...'):
+# --- FRONT-END (INTERFACE MODERNA) ---
+with st.spinner('Processando indicadores...'):
     df_raw = carregar_dados()
 
 if not df_raw.empty:
     df = processar_estrategias(df_raw)
     
-    # Barra Lateral
+    # Filtro Lateral
     st.sidebar.header("Filtros")
-    liquidez_min = st.sidebar.number_input("Liquidez Mínima (R$)", value=200000.0, step=100000.0)
-    df = df[df['Liquidez'] >= liquidez_min]
+    liq_min = st.sidebar.number_input("Liquidez Mínima (R$)", value=200000.0, step=100000.0)
+    df_view = df[df['Liquidez'] >= liq_min].copy()
 
     # Abas
-    tab1, tab2, tab3, tab4 = st.tabs(["💰 Dividendos", "💎 Graham", "✨ Magic Formula", "📈 Gráfico"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💰 Dividendos", "💎 Graham", "✨ Magic Formula", "📈 Gráficos"])
 
-    # --- ABA DIVIDENDOS ---
+    # 1. DIVIDENDOS (Com Barra de Progresso Visual)
     with tab1:
         st.subheader("Top Dividendos (Bazin)")
-        cols_bazin = ['Ticker', 'Preco', 'DY', 'PVP', 'Bazin_Teto']
-        df_bazin = df.nlargest(20, 'DY')
+        df_bazin = df_view.nlargest(20, 'DY')
         
-        # Tenta aplicar estilo, se falhar, mostra tabela normal (FAIL-SAFE)
-        try:
-            st.dataframe(
-                df_bazin[cols_bazin].set_index('Ticker').style
-                .format({'Preco': 'R$ {:.2f}', 'DY': '{:.2f}%', 'PVP': '{:.2f}', 'Bazin_Teto': 'R$ {:.2f}'})
-                .background_gradient(subset=['DY'], cmap='Greens'),
-                use_container_width=True
-            )
-        except:
-            st.warning("Modo de exibição simplificado (Erro de renderização gráfica).")
-            st.dataframe(df_bazin[cols_bazin].set_index('Ticker'), use_container_width=True)
+        st.dataframe(
+            df_bazin[['Ticker', 'Preco', 'DY', 'PVP', 'Bazin_Teto']],
+            column_config={
+                "Preco": st.column_config.NumberColumn("Preço Atual", format="R$ %.2f"),
+                "DY": st.column_config.ProgressColumn(
+                    "Dividend Yield", 
+                    format="%.2f%%", 
+                    min_value=0, 
+                    max_value=20, # Barra cheia em 20%
+                    help="Quanto maior a barra, maior o dividendo."
+                ),
+                "Bazin_Teto": st.column_config.NumberColumn("Preço Teto (6%)", format="R$ %.2f"),
+                "PVP": st.column_config.NumberColumn("P/VP", format="%.2f"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-    # --- ABA GRAHAM ---
+    # 2. GRAHAM (Com Barra de Potencial)
     with tab2:
-        st.subheader("Ranking Graham (Preço Justo)")
-        cols_graham = ['Ticker', 'Preco', 'Graham_Preco', 'Graham_Upside', 'PL', 'PVP']
-        df_graham = df[(df['Graham_Upside'] > 0) & (df['Graham_Upside'] < 500)].nlargest(20, 'Graham_Upside')
+        st.subheader("Ranking Graham (Desconto)")
+        df_graham = df_view[(df_view['Graham_Upside'] > 0) & (df_view['Graham_Upside'] < 300)].nlargest(20, 'Graham_Upside')
         
-        try:
-            st.dataframe(
-                df_graham[cols_graham].set_index('Ticker').style
-                .format({'Preco': 'R$ {:.2f}', 'Graham_Preco': 'R$ {:.2f}', 'Graham_Upside': '{:.2f}%', 'PL': '{:.2f}'})
-                .bar(subset=['Graham_Upside'], color='lightgreen'),
-                use_container_width=True
-            )
-        except:
-            st.dataframe(df_graham[cols_graham].set_index('Ticker'), use_container_width=True)
+        st.dataframe(
+            df_graham[['Ticker', 'Preco', 'Graham_Preco', 'Graham_Upside', 'PL', 'PVP']],
+            column_config={
+                "Preco": st.column_config.NumberColumn("Preço", format="R$ %.2f"),
+                "Graham_Preco": st.column_config.NumberColumn("Preço Justo", format="R$ %.2f"),
+                "Graham_Upside": st.column_config.ProgressColumn(
+                    "Potencial (%)", 
+                    format="%.1f%%", 
+                    min_value=0, 
+                    max_value=100
+                ),
+                "PL": st.column_config.NumberColumn("P/L", format="%.2f"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-    # --- ABA MAGIC FORMULA ---
+    # 3. MAGIC FORMULA
     with tab3:
-        st.subheader("Magic Formula (Greenblatt)")
-        cols_magic = ['Ticker', 'Preco', 'EV_EBIT', 'ROIC', 'Score_Magic']
-        df_magic_view = df.nsmallest(20, 'Score_Magic')
+        st.subheader("Magic Formula (Qualidade + Preço)")
+        df_magic = df_view.nsmallest(20, 'Score_Magic')
         
-        try:
-            st.dataframe(
-                df_magic_view[cols_magic].set_index('Ticker').style
-                .format({'Preco': 'R$ {:.2f}', 'EV_EBIT': '{:.2f}', 'ROIC': '{:.2f}%', 'Score_Magic': '{:.0f}'})
-                .background_gradient(subset=['ROIC'], cmap='Blues'),
-                use_container_width=True
-            )
-        except:
-            st.dataframe(df_magic_view[cols_magic].set_index('Ticker'), use_container_width=True)
+        st.dataframe(
+            df_magic[['Ticker', 'Preco', 'EV_EBIT', 'ROIC', 'Score_Magic']],
+            column_config={
+                "Preco": st.column_config.NumberColumn("Preço", format="R$ %.2f"),
+                "ROIC": st.column_config.ProgressColumn("ROIC (Qualidade)", format="%.1f%%", min_value=0, max_value=50),
+                "EV_EBIT": st.column_config.NumberColumn("EV/EBIT (Preço)", format="%.2f"),
+                "Score_Magic": st.column_config.NumberColumn("Score (Menor = Melhor)"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-    # --- ABA GRÁFICO ---
+    # 4. GRÁFICOS
     with tab4:
-        st.subheader("Mapa de Oportunidades")
-        df_chart = df[(df['PL'] > 0) & (df['PL'] < 40) & (df['ROE'] > 0) & (df['ROE'] < 50)]
-        fig = px.scatter(df_chart, x='PL', y='ROE', color='DY', size='Liquidez', 
-                         hover_name='Ticker', title="P/L vs ROE (Cor = Dividendos)")
+        st.subheader("Raio-X do Mercado")
+        df_chart = df_view[(df_view['PL'] > 0) & (df_view['PL'] < 40) & (df_view['ROE'] > 0) & (df_view['ROE'] < 50)]
+        
+        fig = px.scatter(
+            df_chart, x='PL', y='ROE', color='DY', size='Liquidez',
+            hover_name='Ticker', 
+            title="Mapa: P/L vs ROE (Cor = Dividendos)",
+            labels={'PL': 'P/L (Anos)', 'ROE': 'ROE (%)', 'DY': 'Yield (%)'}
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.error("Erro crítico: Não foi possível baixar os dados. Verifique o requirements.txt.")
+    st.warning("Aguardando dados... Se demorar, recarregue a página.")
