@@ -9,7 +9,7 @@ from io import StringIO
 import unicodedata
 
 # --- 1. CONFIGURAÇÃO DE TERMINAL ---
-st.set_page_config(page_title="Titanium Pro X", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Titanium Pro XI", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Titanium Pro X: Anti-Crash Edition")
+st.title("⚡ Titanium Pro XI: Anti-Crash Edition")
 
 # --- 2. FUNÇÕES DE DADOS ---
 def clean_float(val):
@@ -85,7 +85,7 @@ def get_market_data():
         for col in ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'MargemEbit', 'Cresc_5a']:
             if col in df.columns and df[col].mean() < 1: df[col] *= 100
 
-        # 5. Garantia de Colunas (Se faltar alguma, cria zerada)
+        # 5. Garantia de Colunas (Se faltar alguma, cria zerada para não travar)
         required_cols = ['PL', 'PVP', 'Preco', 'DY', 'EV_EBIT', 'ROIC', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Cresc_5a']
         for c in required_cols:
             if c not in df.columns: df[c] = 0.0
@@ -106,10 +106,16 @@ def get_market_data():
         df['Setor'] = df['Ticker'].apply(get_setor)
         
         # 7. Rankings (Agora seguro porque as colunas existem)
-        df['Graham_Fair'] = np.where((df['PL']>0)&(df['PVP']>0), np.sqrt(22.5 * (df['Preco']/df['PL']) * (df['Preco']/df['PVP'])), 0)
+        # Graham
+        lpa = np.where(df['PL']!=0, df['Preco']/df['PL'], 0)
+        vpa = np.where(df['PVP']!=0, df['Preco']/df['PVP'], 0)
+        df['Graham_Fair'] = np.where((lpa>0)&(vpa>0), np.sqrt(22.5 * lpa * vpa), 0)
         df['Upside'] = np.where((df['Graham_Fair']>0), ((df['Graham_Fair']-df['Preco'])/df['Preco'])*100, -999)
+        
+        # Bazin
         df['Bazin_Fair'] = np.where(df['DY']>0, df['Preco'] * (df['DY']/6), 0)
         
+        # Magic Formula
         df_m = df[(df['EV_EBIT']>0)&(df['ROIC']>0)].copy()
         if not df_m.empty:
             df_m['Score_Magic'] = df_m['EV_EBIT'].rank(ascending=True) + df_m['ROIC'].rank(ascending=False)
@@ -117,8 +123,12 @@ def get_market_data():
         else:
             df['Score_Magic'] = 99999
             
-        # Quality Score
-        df['Quality_Score'] = (df['ROE'].rank(ascending=True) + df['MargemLiquida'].rank(ascending=True) + (df['Div_Patrimonio'] * -1).rank(ascending=True))
+        # Quality Score (Proprietário)
+        # ROE Alto + Margem Alta + Dívida Baixa
+        # Usamos fillna(0) para garantir que não dê erro se a coluna tiver NaN
+        df['Quality_Score'] = (df['ROE'].fillna(0).rank(ascending=True) + 
+                               df['MargemLiquida'].fillna(0).rank(ascending=True) + 
+                               (df['Div_Patrimonio'].fillna(100) * -1).rank(ascending=True))
 
         return df
     except Exception as e:
@@ -132,14 +142,22 @@ def get_accounting_matrix(ticker):
         inc = stock.financials.T.sort_index(ascending=True)
         if inc.empty: return None
         
-        inc = inc.iloc[-3:]
+        inc = inc.iloc[-3:] # Últimos 3 anos
+        
+        # Mapeamento Yahoo (Inglês -> Português)
         col_map = {'Total Revenue': 'Receita', 'Operating Revenue': 'Receita', 'Cost Of Revenue': 'CPV', 
                    'Gross Profit': 'Lucro Bruto', 'Operating Income': 'EBIT', 'Net Income': 'Lucro Líquido'}
         
         df_final = pd.DataFrame(index=inc.index)
-        rev_col = 'Total Revenue' if 'Total Revenue' in inc.columns else 'Operating Revenue'
         
-        if rev_col in inc.columns:
+        # Tenta achar receita
+        rev_col = None
+        for c in ['Total Revenue', 'Operating Revenue']:
+            if c in inc.columns:
+                rev_col = c
+                break
+        
+        if rev_col:
             receita = inc[rev_col]
             for y_col, u_col in col_map.items():
                 if y_col in inc.columns:
@@ -190,7 +208,11 @@ st.subheader(f"📋 Screener ({len(df_view)} ativos)")
 
 t_main = st.tabs(["Geral", "💰 Dividendos", "💎 Valor", "✨ Magic Formula", "🛡️ Qualidade", "🚀 Crescimento"])
 
-cols_main = ['Ticker', 'Setor', 'Preco', 'PL', 'PVP', 'DY', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Cresc_5a', 'Graham_Fair', 'Upside', 'Score_Magic', 'Quality_Score']
+# Definimos as colunas que QUEREMOS mostrar
+cols_desired = ['Ticker', 'Setor', 'Preco', 'PL', 'PVP', 'DY', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Cresc_5a', 'Graham_Fair', 'Upside', 'Score_Magic', 'Quality_Score']
+
+# Filtramos apenas as que REALMENTE existem no DF (Segurança extra)
+cols_safe = [c for c in cols_desired if c in df_view.columns]
 
 cfg = {
     "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
@@ -208,17 +230,22 @@ cfg = {
 sel_ticker = None
 
 def render_table(df_in, key):
-    cols_exist = [c for c in cols_main if c in df_in.columns]
-    ev = st.dataframe(df_in[cols_exist], column_config=cfg, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", height=400, key=key)
+    ev = st.dataframe(df_in[cols_safe], column_config=cfg, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", height=400, key=key)
     if len(ev.selection.rows) > 0: return df_in.iloc[ev.selection.rows[0]]['Ticker']
     return None
 
-with t_main[0]: sel_ticker = render_table(df_view.sort_values('Liquidez', ascending=False), 't1')
-with t_main[1]: sel_ticker = render_table(df_view.nlargest(100, 'DY'), 't2')
-with t_main[2]: sel_ticker = render_table(df_view[(df_view['Upside']>0)].nlargest(100, 'Upside'), 't3')
-with t_main[3]: sel_ticker = render_table(df_view.nsmallest(100, 'Score_Magic'), 't4')
-with t_main[4]: sel_ticker = render_table(df_view.nlargest(100, 'Quality_Score'), 't5')
-with t_main[5]: sel_ticker = render_table(df_view.nlargest(100, 'Cresc_5a'), 't6')
+with t_main[0]: # Geral
+    sel_ticker = render_table(df_view.sort_values('Liquidez', ascending=False), 't1')
+with t_main[1]: # Dividendos
+    sel_ticker = render_table(df_view.nlargest(100, 'DY'), 't2')
+with t_main[2]: # Valor
+    sel_ticker = render_table(df_view[(df_view['Upside']>0)].nlargest(100, 'Upside'), 't3')
+with t_main[3]: # Magic
+    sel_ticker = render_table(df_view.nsmallest(100, 'Score_Magic'), 't4')
+with t_main[4]: # Qualidade
+    sel_ticker = render_table(df_view.nlargest(100, 'Quality_Score'), 't5')
+with t_main[5]: # Crescimento
+    sel_ticker = render_table(df_view.nlargest(100, 'Cresc_5a'), 't6')
 
 st.divider()
 
@@ -231,7 +258,7 @@ if sel_ticker:
     c2.metric("P/L", f"{row['PL']:.1f}x")
     c3.metric("P/VP", f"{row['PVP']:.2f}x")
     c4.metric("ROE", f"{row['ROE']:.1f}%")
-    c5.metric("Dívida/PL", f"{row['Div_Patrimonio']:.2f}")
+    c5.metric("Dívida/PL", f"{row.get('Div_Patrimonio',0):.2f}")
     
     td1, td2, td3 = st.tabs(["📊 Matriz Contábil", "📈 Gráfico", "💎 Valuation"])
     
@@ -240,7 +267,7 @@ if sel_ticker:
             with st.spinner("Gerando Matriz..."):
                 df_matrix = get_accounting_matrix(sel_ticker)
                 if df_matrix is not None:
-                    st.info("Valores em Milhões (M). AV% = Margem (Vertical). AH% = Crescimento (Horizontal).")
+                    st.info("Valores em Milhões (M). AV% = Margem. AH% = Crescimento.")
                     st.dataframe(df_matrix.style.format("{:,.2f}"), use_container_width=True, height=500)
                 else: st.warning("Dados indisponíveis no Yahoo.")
         else: st.info("Ative Yahoo.")
