@@ -8,46 +8,42 @@ import requests
 from io import StringIO
 import unicodedata
 
-# --- 1. CONFIGURAÇÃO DE TERMINAL (BLACK OBSIDIAN THEME) ---
-st.set_page_config(page_title="Titanium XX | The Monolith", layout="wide", initial_sidebar_state="expanded")
+# --- 1. CONFIGURAÇÃO VISUAL INSTITUCIONAL ---
+st.set_page_config(page_title="Titanium XXI | Hedge Fund", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    /* Fundo Absoluto */
     .stApp { background-color: #000000; }
     
-    /* Métricas Monolíticas */
+    /* Métricas */
     [data-testid="stMetricValue"] {
-        font-family: 'Consolas', 'Monaco', monospace;
-        font-size: 2rem;
-        color: #00ffcc;
-        font-weight: 800;
-        text-shadow: 0px 0px 10px rgba(0, 255, 204, 0.4);
+        font-family: 'Consolas', monospace;
+        font-size: 1.5rem;
+        color: #00e676;
+        font-weight: 700;
     }
+    [data-testid="stMetricLabel"] { font-size: 0.9rem; color: #888; }
     
-    /* Tabela Profissional */
-    div[data-testid="stDataFrame"] div[class*="stDataFrame"] { border: 1px solid #222; }
+    /* Tabelas */
+    div[data-testid="stDataFrame"] { border: 1px solid #333; }
     
-    /* Card do Analista */
-    .analyst-card {
-        background: linear-gradient(145deg, #0a0a0a, #111);
-        border: 1px solid #333;
-        border-radius: 12px;
-        padding: 25px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    /* Box de Comparação */
+    .comp-box {
+        background-color: #111;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
     }
-    
-    /* Badges */
-    .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; margin-right: 5px; }
-    .b-green { background: #064025; color: #4ade80; border: 1px solid #4ade80; }
-    .b-red { background: #400606; color: #f87171; border: 1px solid #f87171; }
-    .b-blue { background: #062640; color: #60a5fa; border: 1px solid #60a5fa; }
+    .bull { color: #4ade80; font-weight: bold; }
+    .bear { color: #f87171; font-weight: bold; }
+    .neutral { color: #94a3b8; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Titanium XX: The Monolith")
+st.title("🏛️ Titanium XXI: Hedge Fund Manager")
 
-# --- 2. MOTOR DE DADOS & SCORING SYSTEM ---
+# --- 2. MOTOR DE DADOS & CLEANING ---
 def clean_float(val):
     if isinstance(val, str):
         val = val.replace('.', '').replace(',', '.').replace('%', '').strip()
@@ -56,37 +52,27 @@ def clean_float(val):
     return float(val) if val else 0.0
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_monolith_data():
+def get_data():
     url = 'https://www.fundamentus.com.br/resultado.php'
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         r = requests.get(url, headers=headers)
         df = pd.read_html(StringIO(r.text), decimal=',', thousands='.')[0]
         
-        # 1. Mapeamento Total
-        rename_map = {
-            'Papel': 'Ticker', 'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 'PSR': 'PSR',
-            'Div.Yield': 'DY', 'P/Ativo': 'P_Ativo', 'P/Cap.Giro': 'P_CapGiro',
-            'P/EBIT': 'P_EBIT', 'P/Ativ Circ Liq': 'P_AtivCircLiq',
-            'EV/EBIT': 'EV_EBIT', 'EV/EBITDA': 'EV_EBITDA', 'Mrg Ebit': 'MargemEbit',
-            'Mrg. Líq.': 'MargemLiquida', 'Liq. Corr.': 'LiqCorrente',
-            'ROIC': 'ROIC', 'ROE': 'ROE', 'Liq.2meses': 'Liquidez',
-            'Patrim. Líq': 'Patrimonio', 'Dív.Brut/ Patr.': 'Div_Patrimonio',
-            'Cresc. Rec.5a': 'Cresc_5a'
+        # Renomeia colunas para facilitar
+        rename = {
+            'Papel': 'Ticker', 'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 
+            'Div.Yield': 'DY', 'ROE': 'ROE', 'Margem Líquida': 'MargemLiquida', 
+            'Dív.Brut/ Patr.': 'Div_Patrimonio', 'Cresc. Rec.5a': 'Cresc_5a',
+            'Liq. Corr.': 'LiqCorrente', 'Liq.2meses': 'Liquidez',
+            'EV/EBIT': 'EV_EBIT', 'ROIC': 'ROIC'
         }
         
-        # Normaliza colunas do HTML antes de renomear
-        df.columns = [c.replace('.', '').replace('/', '').replace(' ', '').lower() for c in df.columns]
-        # Mapa reverso baseado na normalização (ajuste técnico)
-        rev_map = {
-            'papel': 'Ticker', 'cotacao': 'Preco', 'pl': 'PL', 'pvp': 'PVP', 'psr': 'PSR',
-            'divyield': 'DY', 'evebit': 'EV_EBIT', 'roic': 'ROIC', 'roe': 'ROE',
-            'liq2meses': 'Liquidez', 'mrgliq': 'MargemLiquida', 'mrgebit': 'MargemEbit',
-            'divbrutpatr': 'Div_Patrimonio', 'crescrec5a': 'Cresc_5a', 'liqcorr': 'LiqCorrente'
-        }
-        
-        cols = [c for c in rev_map.keys() if c in df.columns]
-        df = df[cols].rename(columns=rev_map)
+        # Normaliza nomes do HTML
+        df.columns = [c.replace('.', '').replace('/', '').replace(' ', '') if c not in rename else c for c in df.columns]
+        # Aplica renomeação manual
+        col_map = {'Papel':'Ticker', 'Cotacao':'Preco', 'PL':'PL', 'PVP':'PVP', 'DivYield':'DY', 'ROE':'ROE', 'MrgLiq':'MargemLiquida', 'DivBrutPatr':'Div_Patrimonio', 'CrescRec5a':'Cresc_5a', 'LiqCorr':'LiqCorrente', 'Liq2meses':'Liquidez', 'EVEBIT':'EV_EBIT', 'ROIC':'ROIC'}
+        df.rename(columns=col_map, inplace=True)
         
         # Limpeza
         for col in df.columns:
@@ -94,246 +80,254 @@ def get_monolith_data():
                 df[col] = df[col].apply(clean_float)
                 
         # Percentuais
-        for col in ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'MargemEbit', 'Cresc_5a']:
-            if col in df.columns:
-                if df[col].mean() < 1: df[col] *= 100
-        
-        # Colunas de Garantia
-        cols_req = ['PL', 'PVP', 'Preco', 'DY', 'EV_EBIT', 'ROIC', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Cresc_5a', 'PSR', 'LiqCorrente']
-        for c in cols_req: 
-            if c not in df.columns: df[c] = 0.0
+        for col in ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'Cresc_5a']:
+            if col in df.columns and df[col].mean() < 1: df[col] *= 100
 
-        # Setor
+        # Classificação Setorial (Manual Robusta)
         def get_setor(t):
             t = str(t)[:4]
-            if t in ['ITUB','BBDC','BBAS','SANB']: return 'Financeiro'
-            if t in ['VALE','CSNA','GGBR','USIM']: return 'Materiais'
-            if t in ['PETR','PRIO','UGPA','CSAN']: return 'Energia'
-            if t in ['MGLU','LREN','ARZZ','PETZ']: return 'Varejo'
-            if t in ['WEGE','EMBR','TUPY','RAPT']: return 'Industrial'
-            if t in ['TAEE','TRPL','ELET','CPLE']: return 'Elétricas'
-            if t in ['RADL','RDOR','HAPV','FLRY']: return 'Saúde'
-            return 'Geral'
+            if t in ['ITUB','BBDC','BBAS','SANB','BPAC','B3SA']: return 'Financeiro'
+            if t in ['VALE','CSNA','GGBR','USIM','SUZB','KLBN','CMIN']: return 'Materiais Básicos'
+            if t in ['PETR','PRIO','UGPA','CSAN','RRRP','VBBR']: return 'Petróleo & Gás'
+            if t in ['MGLU','LREN','ARZZ','PETZ','AMER','SOMA']: return 'Varejo'
+            if t in ['WEGE','EMBR','TUPY','RAPT','POMO','KEPL']: return 'Bens Industriais'
+            if t in ['TAEE','TRPL','ELET','CPLE','EQTL','CMIG','EGIE']: return 'Utilidade Pública'
+            if t in ['RADL','RDOR','HAPV','FLRY','QUAL']: return 'Saúde'
+            if t in ['CYRE','EZTC','MRVE','TEND','JHSF','DIRR']: return 'Construção'
+            if t in ['SLCE','AGRO','TTEN','SOJA']: return 'Agronegócio'
+            return 'Outros'
+        
         df['Setor'] = df['Ticker'].apply(get_setor)
         
-        # --- ALGORITMO DE SCORE GLOBAL (0-100) ---
-        # 1. Rank Valuation (Menor PL/PVP é melhor)
-        # Invertemos o rank para que menor PL dê maior pontuação
-        rank_val = (df['PL'].rank(ascending=False, pct=True) + df['PVP'].rank(ascending=False, pct=True)) / 2
-        
-        # 2. Rank Qualidade (Maior ROE/Margem é melhor)
-        rank_qual = (df['ROE'].rank(ascending=True, pct=True) + df['MargemLiquida'].rank(ascending=True, pct=True)) / 2
-        
-        # 3. Rank Renda (Maior DY é melhor)
-        rank_inc = df['DY'].rank(ascending=True, pct=True)
-        
-        # 4. Rank Segurança (Menor Dívida é melhor)
-        rank_safe = (df['Div_Patrimonio'] * -1).rank(ascending=True, pct=True)
-        
-        # Peso do Score Final
-        # Valuation 30%, Qualidade 30%, Renda 20%, Segurança 20%
-        df['Global_Score'] = (rank_val * 30) + (rank_qual * 30) + (rank_inc * 20) + (rank_safe * 20)
-        
-        # Cálculos Auxiliares
-        lpa = np.where(df['PL']!=0, df['Preco']/df['PL'], 0)
-        vpa = np.where(df['PVP']!=0, df['Preco']/df['PVP'], 0)
-        df['Graham'] = np.where((lpa>0)&(vpa>0), np.sqrt(22.5 * lpa * vpa), 0)
-        df['Upside'] = np.where((df['Graham']>0), ((df['Graham']-df['Preco'])/df['Preco'])*100, -999)
+        # Score Básico para Tabela
+        df['Score'] = (df['ROE'].rank(pct=True) + df['DY'].rank(pct=True) + (df['PL']*-1).rank(pct=True))*33
         
         return df
-    except Exception as e:
-        st.error(f"Erro: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-# --- 3. CÉREBRO ANALISTA SUPER POTENTE ---
-def super_analista(row):
-    score = row['Global_Score']
-    
-    # Classificação
-    if score >= 80: veredicto = "COMPRA FORTE (Strong Buy)"
-    elif score >= 60: veredicto = "COMPRA (Buy)"
-    elif score >= 40: veredicto = "NEUTRO (Hold)"
-    else: veredicto = "VENDA (Sell)"
-    
-    insights = []
-    risks = []
-    
-    # Análise Profunda
-    if row['Graham'] > row['Preco'] * 1.5:
-        insights.append(f"💎 **Margem de Segurança:** Negociada com desconto massivo de {row['Upside']:.0f}% sobre o valor intrínseco de Graham.")
-    
-    if row['ROE'] > 20 and row['PL'] < 10:
-        insights.append("🚀 **Qualidade Barata:** Combinação rara de alta rentabilidade (ROE > 20%) com múltiplos baixos (P/L < 10).")
+# --- 3. MOTOR TRIMESTRAL (YAHOO) ---
+def get_quarterly_data(ticker):
+    try:
+        stock = yf.Ticker(ticker+".SA")
+        # Pega trimestral
+        q_inc = stock.quarterly_financials.T.sort_index(ascending=True)
         
-    if row['LiqCorrente'] > 2:
-        insights.append("🛡️ **Caixa Forte:** Alta liquidez corrente, empresa preparada para crises.")
+        if q_inc.empty or len(q_inc) < 2: return None
         
-    if row['Div_Patrimonio'] > 3:
-        risks.append(f"⚠️ **Alavancagem:** Dívida 3x maior que o patrimônio. Atenção aos juros.")
+        # Filtra colunas essenciais
+        cols_map = {'Total Revenue': 'Receita', 'Net Income': 'Lucro Líquido', 'EBITDA': 'EBITDA'}
+        df_q = pd.DataFrame(index=q_inc.index)
         
-    if row['MargemLiquida'] < 5:
-        risks.append("⚠️ **Margens Apertadas:** Baixa eficiência operacional, sensível a custos.")
+        for k, v in cols_map.items():
+            if k in q_inc.columns:
+                df_q[v] = q_inc[k]
         
-    return veredicto, score, insights, risks
+        # Cálculos de Variação (QoQ)
+        df_q['Receita QoQ %'] = df_q['Receita'].pct_change() * 100
+        df_q['Lucro QoQ %'] = df_q['Lucro Líquido'].pct_change() * 100
+        
+        return df_q.iloc[-5:] # Últimos 5 trimestres
+    except: return None
 
-# --- 4. INTERFACE ---
-with st.spinner("Carregando o Monolito..."):
-    df_full = get_monolith_data()
+# --- 4. MOTOR DE COMPARAÇÃO SETORIAL ---
+def get_sector_benchmarks(df_full, setor):
+    peers = df_full[df_full['Setor'] == setor]
+    
+    # Calcula Medianas (Melhor que média para evitar distorções)
+    bench = {
+        'PL': peers[(peers['PL']>0)&(peers['PL']<100)]['PL'].median(),
+        'ROE': peers['ROE'].median(),
+        'DY': peers['DY'].median(),
+        'MargemLiquida': peers['MargemLiquida'].median(),
+        'Div_Patrimonio': peers['Div_Patrimonio'].median()
+    }
+    return bench
+
+# --- 5. INTERFACE ---
+with st.spinner("Carregando Terminal Institucional..."):
+    df_full = get_data()
 
 if df_full.empty:
+    st.error("Sem conexão.")
     st.stop()
 
-# --- SIDEBAR COMPACTA ---
+# SIDEBAR
 with st.sidebar:
     st.header("🎛️ Filtros")
     busca = st.text_input("Ticker", placeholder="PETR4").upper()
-    setor = st.selectbox("Setor", ["Todos"] + sorted(df_full['Setor'].unique().tolist()))
-    liq_min = st.select_slider("Liquidez", options=[0, 500000, 1000000, 5000000, 10000000], value=1000000)
+    setor_f = st.selectbox("Setor", ["Todos"] + sorted(df_full['Setor'].unique().tolist()))
+    liq_f = st.select_slider("Liquidez", options=[0, 100000, 1000000, 5000000], value=1000000)
     
-    with st.expander("Filtros Avançados"):
-        pl_min, pl_max = st.slider("P/L", -5.0, 50.0, (-5.0, 30.0))
-        roe_min = st.slider("ROE Min", -20.0, 40.0, 0.0)
+    usar_yahoo = st.checkbox("Ativar Dados Trimestrais", value=True)
 
-# FILTRAGEM
-mask = (
-    (df_full['Liquidez'] >= liq_min) &
-    (df_full['PL'].between(pl_min, pl_max)) &
-    (df_full['ROE'] >= roe_min)
-)
+# FILTER
+mask = (df_full['Liquidez'] >= liq_f)
 df_view = df_full[mask].copy()
-
-if setor != "Todos": df_view = df_view[df_view['Setor'] == setor]
+if setor_f != "Todos": df_view = df_view[df_view['Setor'] == setor_f]
 if busca: df_view = df_view[df_view['Ticker'].str.contains(busca)]
 
-# --- LAYOUT PRINCIPAL ---
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Ativos no Radar", len(df_view))
-c2.metric("Score Médio", f"{df_view['Global_Score'].mean():.0f}/100")
-top_stock = df_view.sort_values('Global_Score', ascending=False).iloc[0]
-c3.metric("Top Pick", top_stock['Ticker'])
-c4.metric("Upside Top Pick", f"{top_stock['Upside']:.0f}%")
+# LAYOUT
+c1, c2 = st.columns([1.2, 2.5])
 
-st.divider()
-
-# --- TABELA ÚNICA PODEROSA ---
-st.subheader(f"📋 Ranking Unificado (Global Quant Score)")
-
-# Ordenação Padrão: Global Score
-df_show = df_view.sort_values('Global_Score', ascending=False)
-
-# Colunas para exibir
-cols_show = ['Ticker', 'Global_Score', 'Preco', 'Graham', 'Upside', 'PL', 'PVP', 'DY', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Cresc_5a', 'Liquidez']
-
-cfg = {
-    "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
-    "Graham": st.column_config.NumberColumn("Justo", format="R$ %.2f"),
-    "Global_Score": st.column_config.ProgressColumn("🏆 Score", format="%.0f", min_value=0, max_value=100),
-    "Upside": st.column_config.NumberColumn("Upside", format="%.0f%%"),
-    "DY": st.column_config.ProgressColumn("Yield", format="%.1f%%", min_value=0, max_value=15),
-    "ROE": st.column_config.NumberColumn("ROE", format="%.1f%%"),
-    "Liquidez": st.column_config.NumberColumn("Liq.", format="%.0e")
-}
-
-ev = st.dataframe(
-    df_show[cols_show],
-    column_config=cfg,
-    use_container_width=True,
-    hide_index=True,
-    on_select="rerun",
-    selection_mode="single-row",
-    height=400
-)
-
-# --- ANALISTA SUPER POTENTE ---
-st.divider()
-
+# TABELA
 sel_ticker = None
-if len(ev.selection.rows) > 0:
-    sel_ticker = df_show.iloc[ev.selection.rows[0]]['Ticker']
-
-if sel_ticker:
-    row = df_full[df_full['Ticker'] == sel_ticker].iloc[0]
-    veredito, score, insights, risks = super_analista(row)
+with c1:
+    st.subheader(f"📋 Screener ({len(df_view)})")
     
-    st.markdown(f"## 🏛️ Análise Institucional: <span style='color:#00ffcc'>{sel_ticker}</span>", unsafe_allow_html=True)
+    # Colunas seguras
+    cols_show = ['Ticker', 'Preco', 'PL', 'ROE', 'DY', 'Score']
+    cols_safe = [c for c in cols_show if c in df_view.columns]
     
-    # Layout Analista
-    c_left, c_right = st.columns([1.5, 1])
+    cfg = {
+        "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
+        "PL": st.column_config.NumberColumn("P/L", format="%.1f"),
+        "DY": st.column_config.ProgressColumn("DY", format="%.1f%%", min_value=0, max_value=15),
+        "Score": st.column_config.ProgressColumn("Rank", min_value=0, max_value=100),
+    }
     
-    with c_left:
-        # Card Principal
-        color_score = "#00ffcc" if score >= 80 else "#ffcc00" if score >= 50 else "#ff4444"
-        
-        st.markdown(f"""
-        <div class="analyst-card" style="border-left: 5px solid {color_score};">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h4 style="margin:0; color: #888;">VEREDICTO QUANTITATIVO</h4>
-                    <h1 style="margin:0; color: white;">{veredito}</h1>
-                </div>
-                <div style="text-align: right;">
-                    <h1 style="margin:0; font-size: 3.5rem; color: {color_score};">{score:.0f}</h1>
-                    <small style="color: #888;">Global Score</small>
-                </div>
-            </div>
-            <hr style="border-color: #333;">
-            <div style="margin-top: 15px;">
-                <h4 style="color: #00ffcc;">🚀 Teses de Alta (Bull Case)</h4>
-                {''.join([f'<p>✅ {i}</p>' for i in insights]) if insights else "<p style='color:#666'>Nenhum destaque positivo relevante.</p>"}
-            </div>
-            <div style="margin-top: 15px;">
-                <h4 style="color: #ff4444;">⚠️ Riscos (Bear Case)</h4>
-                {''.join([f'<p>🔻 {r}</p>' for r in risks]) if risks else "<p style='color:#666'>Nenhum risco crítico detectado.</p>"}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Gráfico Histórico (Yahoo On Demand)
-        with st.expander("📈 Ver Gráfico de Preço (5 Anos)", expanded=True):
-            try:
-                with st.spinner("Baixando..."):
-                    h = yf.download(sel_ticker+".SA", period="5y", progress=False)
-                    if not h.empty:
-                        if isinstance(h.columns, pd.MultiIndex): h.columns = h.columns.droplevel(1)
-                        st.line_chart(h['Close'], color="#00ffcc", height=250)
-            except: st.error("Gráfico indisponível.")
+    ev = st.dataframe(
+        df_view[cols_safe].sort_values('Score', ascending=False),
+        column_config=cfg,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        height=700
+    )
+    if len(ev.selection.rows) > 0:
+        sel_ticker = df_view.sort_values('Score', ascending=False).iloc[ev.selection.rows[0]]['Ticker']
 
-    with c_right:
-        # Radar Chart
-        st.markdown("#### 🧭 Bússola de Fundamentos")
+# PAINEL ANALISTA
+with c2:
+    if sel_ticker:
+        row = df_full[df_full['Ticker'] == sel_ticker].iloc[0]
+        bench = get_sector_benchmarks(df_full, row['Setor'])
         
-        # Normalização 0-100 para o radar
-        r_vals = [
-            min(100, (15/max(row['PL'],1))*100), # Valor
-            min(100, (row['ROE']/25)*100),       # Qualidade
-            min(100, (row['DY']/12)*100),        # Renda
-            min(100, (1/max(row['Div_Patrimonio'],0.1))*100), # Segurança
-            min(100, (row['MargemLiquida']/20)*100) # Eficiência
-        ]
+        st.markdown(f"## 🏛️ Hedge Fund Report: <span style='color:#00e676'>{sel_ticker}</span>", unsafe_allow_html=True)
+        st.caption(f"Setor: {row['Setor']} | Liquidez: R$ {row['Liquidez']/1e6:.1f}M")
         
-        fig = go.Figure()
-        fig.add_trace(go.Scatterpolar(
-            r=r_vals,
-            theta=['Valor', 'Qualidade', 'Renda', 'Segurança', 'Eficiência'],
-            fill='toself', name=sel_ticker,
-            line_color='#00ffcc', fillcolor='rgba(0, 255, 204, 0.2)'
-        ))
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100], color='#444')),
-            template="plotly_dark",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=20, b=20, l=40, r=40),
-            height=300
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        # 1. VALUATION RELATIVO (AÇÃO vs SETOR)
+        st.markdown("#### ⚖️ Valuation Relativo (vs Pares)")
         
-        # KPIs Grid
-        c1, c2 = st.columns(2)
-        c1.metric("P/L", f"{row['PL']:.1f}x")
-        c2.metric("P/VP", f"{row['PVP']:.2f}x")
-        c1.metric("ROE", f"{row['ROE']:.1f}%")
-        c2.metric("Dívida/PL", f"{row.get('Div_Patrimonio',0):.2f}")
+        k1, k2, k3, k4 = st.columns(4)
+        
+        # Lógica de Cor: Se for melhor que o setor, Verde. Pior, Vermelho.
+        # PL (Menor é melhor)
+        pl_delta = ((row['PL'] - bench['PL']) / bench['PL']) * 100
+        pl_color = "normal" if abs(pl_delta) < 10 else "inverse" # Streamlit delta logic
+        k1.metric("P/L Ação", f"{row['PL']:.1f}x", f"{pl_delta:.1f}% vs Setor", delta_color="inverse")
+        
+        # ROE (Maior é melhor)
+        roe_delta = row['ROE'] - bench['ROE']
+        k2.metric("ROE Ação", f"{row['ROE']:.1f}%", f"{roe_delta:.1f}pp vs Setor")
+        
+        # DY (Maior é melhor)
+        dy_delta = row['DY'] - bench['DY']
+        k3.metric("Yield Ação", f"{row['DY']:.1f}%", f"{dy_delta:.1f}pp vs Setor")
+        
+        # Margem
+        mrg_delta = row['MargemLiquida'] - bench['MargemLiquida']
+        k4.metric("Margem Líq.", f"{row['MargemLiquida']:.1f}%", f"{mrg_delta:.1f}pp vs Setor")
+        
+        st.markdown("---")
+        
+        # 2. ANÁLISE TRIMESTRAL (QoQ)
+        st.markdown("#### 📉 Performance Trimestral (Evolução Recente)")
+        
+        if usar_yahoo:
+            with st.spinner("Baixando Balanços Trimestrais..."):
+                df_q = get_quarterly_data(sel_ticker)
+                
+                if df_q is not None:
+                    # Gráfico Combinado (Barra Receita + Linha Lucro)
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(name='Receita', x=df_q.index, y=df_q['Receita'], marker_color='#1f77b4'))
+                    fig.add_trace(go.Scatter(name='Lucro Líquido', x=df_q.index, y=df_q['Lucro Líquido'], yaxis='y2', line=dict(color='#00e676', width=3)))
+                    
+                    fig.update_layout(
+                        title="Receita (Barras) vs Lucro (Linha) - Últimos Trimestres",
+                        yaxis=dict(title="Receita"),
+                        yaxis2=dict(title="Lucro", overlaying='y', side='right'),
+                        template="plotly_dark",
+                        legend=dict(orientation="h", y=1.1),
+                        height=350
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Tabela de Variação
+                    st.markdown("**Variação Trimestral (QoQ %):**")
+                    cols_show = ['Receita', 'Receita QoQ %', 'Lucro Líquido', 'Lucro QoQ %']
+                    st.dataframe(
+                        df_q[cols_show].style.format("{:,.2f}").background_gradient(subset=['Receita QoQ %', 'Lucro QoQ %'], cmap='RdYlGn', vmin=-20, vmax=20),
+                        use_container_width=True
+                    )
+                    
+                    # Insights Automáticos
+                    last_q = df_q.iloc[0] # Yahoo ordena o mais recente primeiro (ou ultimo index dependendo do sort)
+                    # No nosso código fiz sort_index(ascending=True), então o último é o mais recente.
+                    last_q = df_q.iloc[-1]
+                    
+                    txt_analise = []
+                    if last_q['Receita QoQ %'] > 0 and last_q['Lucro QoQ %'] > 0:
+                        txt_analise.append("🟢 **Trimestre Forte:** Empresa cresceu tanto Receita quanto Lucro no último tri.")
+                    elif last_q['Receita QoQ %'] > 0 and last_q['Lucro QoQ %'] < 0:
+                        txt_analise.append("🟡 **Compressão:** Receita subiu, mas Lucro caiu. Custos aumentaram?")
+                    elif last_q['Receita QoQ %'] < 0:
+                        txt_analise.append("🔴 **Desaceleração:** Receita caiu frente ao trimestre anterior.")
+                        
+                    st.info(" ".join(txt_analise))
+                    
+                else:
+                    st.warning("Dados trimestrais não disponíveis no Yahoo Finance para este ativo.")
+        else:
+            st.info("Ative a opção Yahoo para ver dados trimestrais.")
+            
+        st.markdown("---")
+        
+        # 3. VEREDITO COMPARATIVO
+        c_radar, c_txt = st.columns([1, 1.5])
+        
+        with c_radar:
+            # Radar: Ação vs Setor (Normalizado)
+            # Precisamos normalizar para escala 0-100 para o gráfico fazer sentido
+            # Usaremos: (Valor Ação / Valor Setor) * 50. Se igual = 50. Se dobro = 100.
+            
+            r_pl = 50 * (bench['PL'] / max(row['PL'], 0.1)) # PL menor é melhor
+            r_roe = 50 * (row['ROE'] / max(bench['ROE'], 0.1))
+            r_dy = 50 * (row['DY'] / max(bench['DY'], 0.1))
+            r_div = 50 * (bench['Div_Patrimonio'] / max(row.get('Div_Patrimonio', 1), 0.1))
+            
+            # Limita a 100
+            vals = [min(100, x) for x in [r_pl, r_roe, r_dy, r_div]]
+            
+            fig_r = go.Figure()
+            fig_r.add_trace(go.Scatterpolar(
+                r=vals, theta=['Valuation (P/L)', 'Rentabilidade (ROE)', 'Dividendos', 'Segurança (Dívida)'],
+                fill='toself', name='Ação', line_color='#00ffcc'
+            ))
+            fig_r.add_trace(go.Scatterpolar(
+                r=[50, 50, 50, 50], theta=['Valuation (P/L)', 'Rentabilidade (ROE)', 'Dividendos', 'Segurança (Dívida)'],
+                name='Média Setor', line_color='#666', line_dash='dash'
+            ))
+            fig_r.update_layout(polar=dict(radialaxis=dict(visible=False, range=[0, 100])), template="plotly_dark", height=300, margin=dict(t=20, b=20))
+            st.plotly_chart(fig_r, use_container_width=True)
+            
+        with c_txt:
+            st.markdown("#### 🏆 Conclusão Setorial")
+            if row['ROE'] > bench['ROE'] and row['PL'] < bench['PL']:
+                st.success(f"**JOIA RARA:** {sel_ticker} é mais rentável (ROE {row['ROE']}%) e mais barata (P/L {row['PL']}x) que a média do setor.")
+            elif row['ROE'] < bench['ROE'] and row['PL'] > bench['PL']:
+                st.error(f"**CARA E PIOR:** {sel_ticker} tem rentabilidade menor e custa mais caro que os pares.")
+            else:
+                st.warning(f"**EM LINHA:** Ação negociada dentro dos parâmetros justos do setor.")
 
-else:
-    st.info("👆 Clique em um ativo na Tabela Unificada para ativar o Analista.")
+    else:
+        st.info("👆 Selecione um ativo para iniciar a análise Hedge Fund.")
+        
+        # Market Map
+        try:
+            df_map = df_view.groupby('Setor')[['Liquidez', 'ROE']].median().reset_index()
+            df_map['Qtd'] = df_view.groupby('Setor')['Ticker'].count().values
+            fig = px.treemap(df_map, path=['Setor'], values='Qtd', color='ROE', color_continuous_scale='Viridis', title="Mapa de Calor: Setores por ROE")
+            st.plotly_chart(fig, use_container_width=True)
+        except: pass
