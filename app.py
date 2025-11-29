@@ -8,38 +8,43 @@ import requests
 from io import StringIO
 import unicodedata
 
-# --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Titanium XVI | Deep Mind", layout="wide", initial_sidebar_state="collapsed")
+# --- 1. CONFIGURAÇÃO DE TERMINAL ELITE ---
+st.set_page_config(page_title="Titanium XVII | Omni", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0d1117; }
+    .stApp { background-color: #0b0e11; }
     
-    /* Títulos e Métricas */
+    /* Métricas e Títulos */
     h1, h2, h3 { font-family: 'Segoe UI', sans-serif; color: #e6edf3; }
-    [data-testid="stMetricValue"] { font-size: 1.6rem; color: #3fb950; font-family: 'Roboto Mono', monospace; }
+    [data-testid="stMetricValue"] { font-size: 1.5rem; color: #00ffbf; font-family: 'Roboto Mono', monospace; font-weight: 700; }
     
-    /* Report Card - Estilo Relatório PDF */
-    .report-container {
+    /* Card de Relatório */
+    .report-card {
         background-color: #161b22;
         border: 1px solid #30363d;
-        border-radius: 6px;
-        padding: 25px;
-        margin-bottom: 20px;
-        font-family: 'Segoe UI', sans-serif;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
     }
-    .report-title { color: #58a6ff; font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; }
-    .report-text { color: #c9d1d9; font-size: 0.95rem; line-height: 1.6; text-align: justify; }
-    .highlight-good { color: #3fb950; font-weight: bold; }
-    .highlight-bad { color: #f85149; font-weight: bold; }
-    .highlight-neutral { color: #d2a8ff; font-weight: bold; }
+    .report-header {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #58a6ff;
+        border-bottom: 1px solid #30363d;
+        padding-bottom: 8px;
+        margin-bottom: 10px;
+    }
+    .text-bull { color: #3fb950; font-weight: 600; }
+    .text-bear { color: #f85149; font-weight: 600; }
+    .text-neutral { color: #8b949e; }
     
     /* Tabelas */
-    .stDataFrame { border: 1px solid #30363d; }
+    .stDataFrame { border: 1px solid #30363d; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Titanium XVI: Deep Mind Analyst")
+st.title("⚡ Titanium XVII: Omni-Analyst")
 
 # --- 2. MOTOR DE DADOS ---
 def clean_float(val):
@@ -71,34 +76,33 @@ def get_market_data():
             'papel': 'Ticker', 'cotacao': 'Preco', 'pl': 'PL', 'pvp': 'PVP', 'divyield': 'DY',
             'evebit': 'EV_EBIT', 'roic': 'ROIC', 'roe': 'ROE', 'liq2meses': 'Liquidez',
             'mrgliq': 'MargemLiquida', 'mrgebit': 'MargemEbit', 'divbrutpatr': 'Div_Patrimonio',
-            'crescrec5a': 'Cresc_5a', 'liqcorr': 'LiqCorrente'
+            'crescrec5a': 'Cresc_5a', 'liqcorr': 'LiqCorrente', 'psr': 'PSR'
         }
+        
         cols = [c for c in rename_map.keys() if c in df.columns]
         df = df[cols].rename(columns=rename_map)
         
         for col in df.columns:
-            if col != 'Ticker' and df[col].dtype == object:
-                df[col] = df[col].apply(clean_float)
-                
+            if col != 'Ticker': df[col] = df[col].apply(clean_float)
+            
         for col in ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'MargemEbit', 'Cresc_5a']:
             if col in df.columns and df[col].mean() < 1: df[col] *= 100
             
-        cols_req = ['PL', 'PVP', 'Preco', 'DY', 'EV_EBIT', 'ROIC', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Cresc_5a']
-        for c in cols_req: 
-            if c not in df.columns: df[c] = 0.0
-
+        # Classificação Setorial
         def get_setor(t):
             t = t[:4]
-            if t in ['ITUB','BBDC','BBAS','SANB']: return 'Financeiro'
-            if t in ['VALE','CSNA','GGBR','USIM']: return 'Materiais'
-            if t in ['PETR','PRIO','UGPA','CSAN']: return 'Petróleo'
-            if t in ['MGLU','LREN','ARZZ','PETZ']: return 'Varejo'
+            if t in ['ITUB','BBDC','BBAS','SANB','BPAC']: return 'Financeiro'
+            if t in ['VALE','CSNA','GGBR','USIM','SUZB','KLBN']: return 'Materiais'
+            if t in ['PETR','PRIO','UGPA','CSAN','RRRP']: return 'Petróleo'
+            if t in ['MGLU','LREN','ARZZ','PETZ','AMER']: return 'Varejo'
             if t in ['WEGE','EMBR','TUPY','RAPT']: return 'Industrial'
-            if t in ['TAEE','TRPL','ELET','CPLE']: return 'Elétricas'
+            if t in ['TAEE','TRPL','ELET','CPLE','EQTL']: return 'Elétricas'
+            if t in ['RADL','RDOR','HAPV','FLRY']: return 'Saúde'
+            if t in ['CYRE','EZTC','MRVE','TEND']: return 'Construção'
             return 'Geral'
         df['Setor'] = df['Ticker'].apply(get_setor)
         
-        # Rankings
+        # Rankings e Segurança
         lpa = np.where(df['PL']!=0, df['Preco']/df['PL'], 0)
         vpa = np.where(df['PVP']!=0, df['Preco']/df['PVP'], 0)
         df['Graham_Fair'] = np.where((lpa>0)&(vpa>0), np.sqrt(22.5 * lpa * vpa), 0)
@@ -107,78 +111,43 @@ def get_market_data():
         return df
     except: return pd.DataFrame()
 
-# --- 3. CÉREBRO DEEP MIND (ANÁLISE COMPLEXA) ---
-def deep_mind_analysis(ticker, row_fundamentus):
+# --- 3. CÉREBRO OMNI-ANALYST (IA DE TESE) ---
+def omni_analysis(ticker, row_fundamentus):
     """
-    Realiza uma análise profunda cruzando dados do Fundamentus (Snapshot) 
-    com dados Históricos do Yahoo (Tendência).
+    Gera tese completa, score multidimensional e dados para radar.
     """
-    report = {
-        "Executive_Summary": "",
-        "Growth_Analysis": "",
-        "Margin_Analysis": "",
-        "Valuation_Analysis": "",
-        "Risk_Analysis": ""
-    }
+    report = {"Valuation": "", "Quality": "", "Growth": "", "Risk": "", "Score_Data": {}}
     
-    try:
-        # Baixa dados contábeis
-        stock = yf.Ticker(ticker + ".SA")
-        fin_anual = stock.financials.T.sort_index(ascending=True) # Anual
-        fin_quart = stock.quarterly_financials.T.sort_index(ascending=True) # Trimestral
+    # 1. VALUATION SCORE
+    val_score = 0
+    val_txt = []
+    
+    # P/L
+    if row_fundamentus['PL'] <= 0:
+        val_txt.append("🔴 Prejuízo recorrente (P/L negativo).")
+        val_score = 0
+    elif row_fundamentus['PL'] < 6:
+        val_txt.append(
+            "🟢 **Deep Value:** O múltiplo P/L abaixo de 6x indica forte desconto, "
+            "mas exige verificação de recorrência de lucros."
+        )
+        val_score = 10
+    elif row_fundamentus['PL'] < 15:
+        val_txt.append("🔵 **Preço Justo:** Negociada em múltiplos razoáveis de mercado.")
+        val_score = 7
+    else:
+        val_txt.append("🟡 **Prêmio de Crescimento:** P/L esticado, o mercado exige forte expansão futura.")
+        val_score = 3
         
-        # 1. ANÁLISE DE CRESCIMENTO (Growth)
-        growth_txt = []
-        if len(fin_anual) >= 3 and 'Total Revenue' in fin_anual.columns:
-            rev_last = fin_anual['Total Revenue'].iloc[-1]
-            rev_3y = fin_anual['Total Revenue'].iloc[-3]
-            cagr_rev = ((rev_last / rev_3y) ** (1/3) - 1) * 100
-            
-            growth_txt.append(f"A empresa apresenta um **CAGR de Receita (3 anos)** de <span class='{'highlight-good' if cagr_rev > 10 else 'highlight-neutral'}'>{cagr_rev:.1f}%</span>.")
-            
-            # Alavancagem Operacional (Lucro cresceu mais que receita?)
-            if 'Operating Income' in fin_anual.columns:
-                op_inc_last = fin_anual['Operating Income'].iloc[-1]
-                op_inc_3y = fin_anual['Operating Income'].iloc[-3]
-                try:
-                    cagr_op = ((op_inc_last / op_inc_3y) ** (1/3) - 1) * 100
-                    if cagr_op > cagr_rev + 2:
-                        growth_txt.append("Destaca-se a <span class='highlight-good'>Alavancagem Operacional Positiva</span>: o lucro operacional cresceu mais rápido que a receita, indicando ganho de eficiência.")
-                    elif cagr_op < cagr_rev - 5:
-                        growth_txt.append("<span class='highlight-bad'>Alerta de Eficiência:</span> O lucro operacional não acompanhou o crescimento da receita, sugerindo aumento desproporcional de custos.")
-                except: pass
-        else:
-            growth_txt.append("Dados históricos insuficientes para cálculo de CAGR preciso.")
-            
-        report["Growth_Analysis"] = " ".join(growth_txt)
+    # Graham
+    if row_fundamentus['Upside'] > 30:
+        val_txt.append(f"🟢 **Graham:** Margem de segurança de {row_fundamentus['Upside']:.0f}%.")
+        val_score += 2
+        
+    report['Valuation'] = " ".join(val_txt)
 
-        # 2. ANÁLISE DE MARGENS (Tendência)
-        margin_txt = []
-        margem_atual = row_fundamentus['MargemLiquida']
-        
-        # Tenta calcular média histórica
-        if len(fin_anual) >= 3 and 'Net Income' in fin_anual.columns and 'Total Revenue' in fin_anual.columns:
-            hist_margins = (fin_anual['Net Income'] / fin_anual['Total Revenue']) * 100
-            avg_margin = hist_margins.mean()
-            
-            if margem_atual > avg_margin * 1.2:
-                margin_txt.append(f"A Margem Líquida atual ({margem_atual:.1f}%) está <span class='highlight-good'>acima da média histórica</span> ({avg_margin:.1f}%), sugerindo um momento de pico de ciclo ou melhoria estrutural.")
-            elif margem_atual < avg_margin * 0.8:
-                margin_txt.append(f"A Margem Líquida atual ({margem_atual:.1f}%) está <span class='highlight-bad'>comprimida</span> em relação à média histórica ({avg_margin:.1f}%). Investigar pressão de custos.")
-            else:
-                margin_txt.append(f"As margens seguem estáveis e em linha com o histórico da empresa ({avg_margin:.1f}%).")
-        
-        report["Margin_Analysis"] = " ".join(margin_txt)
-
-        # 3. VALUATION COMPARATIVO (Ben Graham + P/L Histórico)
-        val_txt = []
-        upside = row_fundamentus['Upside']
-        pl_atual = row_fundamentus['PL']
-        
-        if upside > 30:
-            val_txt.append(f"O modelo de Benjamin Graham aponta um <span class='highlight-good'>Upside Teórico de {upside:.0f}%</span>, sugerindo forte desconto patrimonial e de lucros.")
-        elif upside < -20:
-            val_txt.append(f"O modelo de Graham sugere que o ativo está <span class='highlight-bad'>negociado com prêmio</span> sobre seu valor intrínseco conservador.")
-            
-        if pl_atual < 5 and pl_atual > 0:
-            val_txt.append("O múltiplo P/L abaixo de 5x classifica o ativo como **Deep Value**, embora exija caut
+    # 2. QUALITY SCORE (Eficiência)
+    qual_score = 0
+    qual_txt = []
+    
+    if row_fundamentus['ROE
