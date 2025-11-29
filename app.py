@@ -7,24 +7,42 @@ import yfinance as yf
 import requests
 from io import StringIO
 
-# --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Titanium Pro VII", layout="wide", initial_sidebar_state="expanded")
+# --- 1. CONFIGURAÇÃO DE TERMINAL (VISUAL BLOOMBERG) ---
+st.set_page_config(page_title="Titanium Pro VIII", layout="wide", initial_sidebar_state="expanded")
 
+# CSS Avançado
 st.markdown("""
 <style>
-    .stApp { background-color: #0b0e11; }
-    [data-testid="stMetricValue"] { font-size: 1.3rem; color: #00ffbf; font-family: 'Roboto Mono', monospace; }
-    [data-testid="stMetricLabel"] { font-size: 0.8rem; color: #888; }
-    div[data-testid="stDataFrame"] div[class*="stDataFrame"] { border: 1px solid #333; }
-    .stTabs [data-baseweb="tab-list"] { gap: 2px; background-color: #161b22; padding: 5px; }
-    .stTabs [data-baseweb="tab"] { height: 35px; font-size: 12px; color: #ccc; border: none; }
+    /* Fundo Dark Profissional */
+    .stApp { background-color: #0e1117; }
+    
+    /* Métricas */
+    [data-testid="stMetricValue"] {
+        font-family: 'Roboto Mono', monospace;
+        font-size: 1.5rem;
+        color: #00e676; /* Verde Terminal */
+        font-weight: 700;
+    }
+    
+    /* Tabelas Compactas */
+    .stDataFrame { border: 1px solid #30363d; border-radius: 5px; }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] { background-color: #0d1117; border-right: 1px solid #30363d; }
+    
+    /* Abas */
+    .stTabs [data-baseweb="tab-list"] { gap: 5px; background-color: #161b22; padding: 5px; border-radius: 8px; }
+    .stTabs [data-baseweb="tab"] { height: 35px; border: none; color: #8b949e; font-weight: 600; }
     .stTabs [aria-selected="true"] { background-color: #238636 !important; color: white !important; }
+    
+    /* Títulos */
+    h1, h2, h3 { color: #e6edf3; font-family: 'Segoe UI', sans-serif; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Titanium Pro VII: Stable Core")
+st.title("⚡ Titanium Pro VIII: Market Terminal")
 
-# --- 2. MOTOR DE DADOS (FUNDAMENTUS) ---
+# --- 2. MOTOR DE DADOS "CAMALEÃO" (Evita Bloqueio) ---
 def clean_float(val):
     if isinstance(val, str):
         val = val.replace('.', '').replace(',', '.').replace('%', '').strip()
@@ -33,254 +51,245 @@ def clean_float(val):
     return float(val) if val else 0.0
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_market_data():
+def get_data_engine():
+    # URL Oficial
     url = 'https://www.fundamentus.com.br/resultado.php'
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    # Headers para fingir ser um navegador real (Bypass de segurança)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
+    }
     
     try:
+        # Requisição direta
         r = requests.get(url, headers=headers)
+        r.raise_for_status() # Garante que não foi erro 403/404
+        
+        # Leitura
         df = pd.read_html(StringIO(r.text), decimal=',', thousands='.')[0]
         
+        # Mapeamento Seguro
         rename_map = {
-            'Papel': 'Ticker', 'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 'PSR': 'PSR',
-            'Div.Yield': 'DY', 'P/Ativo': 'P_Ativo', 'P/Cap.Giro': 'P_CapGiro',
-            'P/EBIT': 'P_EBIT', 'P/Ativ Circ Liq': 'P_AtivCircLiq',
-            'EV/EBIT': 'EV_EBIT', 'EV/EBITDA': 'EV_EBITDA', 'Mrg Ebit': 'MargemEbit',
-            'Mrg. Líq.': 'MargemLiquida', 'Liq. Corr.': 'LiqCorrente',
-            'ROIC': 'ROIC', 'ROE': 'ROE', 'Liq.2meses': 'Liquidez',
-            'Patrim. Líq': 'Patrimonio', 'Dív.Brut/ Patr.': 'Div_Patrimonio',
-            'Cresc. Rec.5a': 'Cresc_5a'
+            'Papel': 'Ticker', 'Cotação': 'Preco', 'P/L': 'PL', 'P/VP': 'PVP', 
+            'Div.Yield': 'DY', 'ROE': 'ROE', 'ROIC': 'ROIC', 'EV/EBIT': 'EV_EBIT',
+            'Liq.2meses': 'Liquidez', 'Mrg. Líq.': 'MargemLiquida',
+            'Dív.Brut/ Patr.': 'Div_Patrimonio', 'Cresc. Rec.5a': 'Cresc_5a'
         }
         
+        # Filtra apenas o que veio
         cols = [c for c in rename_map.keys() if c in df.columns]
         df = df[cols].rename(columns=rename_map)
         
+        # Limpeza Numérica Robusta
         for col in df.columns:
-            if col != 'Ticker':
-                if df[col].dtype == object: df[col] = df[col].apply(clean_float)
+            if col != 'Ticker' and df[col].dtype == object:
+                df[col] = df[col].apply(clean_float)
         
-        pct_cols = ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'MargemEbit', 'Cresc_5a']
+        # Ajuste de Escala
+        pct_cols = ['DY', 'ROE', 'ROIC', 'MargemLiquida', 'Cresc_5a']
         for col in pct_cols:
-            if col in df.columns:
-                if df[col].mean() < 1: df[col] *= 100
+            if col in df.columns and df[col].mean() < 1:
+                df[col] *= 100
 
-        def get_setor(t):
+        # Classificação Setorial (Manual)
+        def classify_sector(t):
             t = t[:4]
-            if t in ['ITUB','BBDC','BBAS','SANB','BPAC']: return 'Financeiro'
-            if t in ['VALE','CSNA','GGBR','USIM','SUZB']: return 'Materiais'
-            if t in ['PETR','PRIO','UGPA','CSAN','RRRP']: return 'Petróleo'
-            if t in ['MGLU','LREN','ARZZ','PETZ','AMER']: return 'Varejo'
-            if t in ['WEGE','EMBR','TUPY','RAPT']: return 'Industrial'
-            if t in ['TAEE','TRPL','ELET','CPLE','EQTL']: return 'Elétricas'
+            if t in ['ITUB','BBDC','BBAS','SANB','BPAC','B3SA','BBSE']: return 'Financeiro'
+            if t in ['VALE','CSNA','GGBR','USIM','SUZB','KLBN','CMIN']: return 'Materiais'
+            if t in ['PETR','PRIO','UGPA','CSAN','RRRP','VBBR']: return 'Petróleo'
+            if t in ['MGLU','LREN','ARZZ','PETZ','AMER','SOMA']: return 'Varejo'
+            if t in ['WEGE','EMBR','TUPY','RAPT','POMO']: return 'Industrial'
+            if t in ['TAEE','TRPL','ELET','CPLE','EQTL','CMIG','EGIE']: return 'Elétricas'
             if t in ['RADL','RDOR','HAPV','FLRY']: return 'Saúde'
-            if t in ['CYRE','EZTC','MRVE','TEND']: return 'Construção'
+            if t in ['CYRE','EZTC','MRVE','TEND','JHSF']: return 'Construção'
             return 'Geral'
         
-        df['Setor'] = df['Ticker'].apply(get_setor)
+        df['Setor'] = df['Ticker'].apply(classify_sector)
         
-        # Rankings
-        lpa = np.where(df['PL']!=0, df['Preco']/df['PL'], 0)
-        vpa = np.where(df['PVP']!=0, df['Preco']/df['PVP'], 0)
-        df['Graham_Fair'] = np.where((lpa>0)&(vpa>0), np.sqrt(22.5 * lpa * vpa), 0)
-        df['Upside'] = np.where((df['Graham_Fair']>0), ((df['Graham_Fair']-df['Preco'])/df['Preco'])*100, -999)
+        # Rankings Quant
+        # Graham Seguro
+        df['Graham_Fair'] = 0.0
+        mask_graham = (df['PL'] > 0) & (df['PVP'] > 0)
+        df.loc[mask_graham, 'Graham_Fair'] = np.sqrt(22.5 * (df.loc[mask_graham, 'Preco']/df.loc[mask_graham, 'PL']) * (df.loc[mask_graham, 'Preco']/df.loc[mask_graham, 'PVP']))
+        
+        df['Upside'] = np.where((df['Graham_Fair']>0) & (df['Preco']>0), ((df['Graham_Fair']-df['Preco'])/df['Preco'])*100, -999)
         df['Bazin_Fair'] = np.where(df['DY']>0, df['Preco'] * (df['DY']/6), 0)
         
-        df_m = df[(df['EV_EBIT']>0)&(df['ROIC']>0)].copy()
-        if not df_m.empty:
-            df_m['Score_Magic'] = df_m['EV_EBIT'].rank(ascending=True) + df_m['ROIC'].rank(ascending=False)
-            df = df.merge(df_m[['Ticker', 'Score_Magic']], on='Ticker', how='left')
-        else:
-            df['Score_Magic'] = 99999
-
         return df
+        
     except Exception as e:
-        st.error(f"Erro Dados: {e}")
+        st.error(f"Erro ao conectar com a B3: {e}")
         return pd.DataFrame()
 
-# --- 3. MOTOR CONTÁBIL (YAHOO ROBUSTO) ---
-def get_accounting_data(ticker):
-    """Tenta baixar dados contábeis com fallback de nomes"""
+# --- 3. MOTOR CONTÁBIL E GRÁFICO (YAHOO) ---
+def get_details(ticker):
     try:
-        stock = yf.Ticker(ticker+".SA")
+        t_sa = ticker + ".SA"
+        stock = yf.Ticker(t_sa)
+        
+        # 1. Gráfico
+        hist = stock.history(period="5y")
+        
+        # 2. Contábil
         inc = stock.financials.T.sort_index(ascending=True)
-        
-        if inc.empty: return None, None
-        
-        # Tenta encontrar a coluna de Receita (Yahoo muda os nomes as vezes)
-        rev_col = None
-        possible_rev = ['Total Revenue', 'Revenue', 'Gross Revenue']
-        for c in possible_rev:
-            if c in inc.columns:
-                rev_col = c
-                break
-        
-        if rev_col:
-            av = pd.DataFrame()
-            receita = inc[rev_col]
-            av['Receita'] = receita
+        if not inc.empty and 'Total Revenue' in inc.columns:
+            inc['Margem Liquida %'] = (inc['Net Income'] / inc['Total Revenue']) * 100
+            inc = inc.iloc[-4:] # Últimos 4 anos
+        else:
+            inc = None
             
-            # Mapeia outras colunas
-            targets = {'Gross Profit': 'Lucro Bruto', 'Operating Income': 'EBIT', 'Net Income': 'Lucro Líquido'}
-            for en, pt in targets.items():
-                if en in inc.columns:
-                    av[pt] = inc[en]
-                    av[f'{pt} %'] = (inc[en] / receita) * 100
-            
-            # AH
-            ah = inc[[rev_col] + [c for c in targets.keys() if c in inc.columns]].pct_change() * 100
-            
-            return av.iloc[-4:], ah.iloc[-4:]
-            
-    except: return None, None
-    return None, None
+        return hist, inc
+    except:
+        return None, None
 
-# --- 4. MOMENTUM ---
-@st.cache_data(ttl=1800)
-def get_momentum(tickers):
-    if not tickers: return {}
-    ts = [t+".SA" for t in tickers]
-    try:
-        h = yf.download(ts, period="6mo", progress=False)['Adj Close']
-        if isinstance(h, pd.Series): h = h.to_frame(name=ts[0])
-        res = {}
-        for c in h.columns:
-            s = h[c].dropna()
-            if len(s)>20:
-                ret = ((s.iloc[-1]-s.iloc[0])/s.iloc[0])*100
-                res[c.replace('.SA','')] = ret
-        return res
-    except: return {}
-
-# --- 5. INTERFACE ---
-with st.spinner("Conectando..."):
-    df_full = get_market_data()
+# --- 4. INTERFACE ---
+with st.spinner("Inicializando Terminal Quantitativo..."):
+    df_full = get_data_engine()
 
 if df_full.empty:
-    st.error("Sem conexão.")
+    st.warning("Servidor de dados instável. Tente recarregar a página (F5).")
     st.stop()
 
-# Sidebar
+# --- SIDEBAR: FILTROS ---
 with st.sidebar:
     st.header("🎛️ Filtros")
     busca = st.text_input("Ticker", placeholder="PETR4").upper()
-    setor_op = ["Todos"] + sorted(df_full['Setor'].unique().tolist())
-    setor = st.selectbox("Setor", setor_op)
+    setor = st.selectbox("Setor", ["Todos"] + sorted(df_full['Setor'].unique().tolist()))
     
     with st.expander("📊 Indicadores", expanded=True):
-        liq_min = st.select_slider("Liquidez", options=[0, 100000, 500000, 2000000, 10000000], value=500000)
-        pl_r = st.slider("P/L", -5.0, 50.0, (-5.0, 30.0))
-        dy_r = st.slider("DY %", 0.0, 30.0, (0.0, 30.0))
+        liq_min = st.select_slider("Liquidez", options=[0, 100000, 500000, 1000000, 10000000], value=500000)
+        pl_range = st.slider("P/L", -10.0, 50.0, (-5.0, 30.0))
+        dy_range = st.slider("DY %", 0.0, 30.0, (0.0, 30.0))
     
-    usar_mom = st.checkbox("Calcular Momentum", value=True)
+    usar_graficos = st.checkbox("Carregar Gráficos e Detalhes", value=True)
 
-# Filtros
+# FILTRAGEM
 mask = (
     (df_full['Liquidez'] >= liq_min) &
-    (df_full['PL'].between(pl_r[0], pl_r[1])) &
-    (df_full['DY'].between(dy_r[0], dy_r[1]))
+    (df_full['PL'].between(pl_range[0], pl_range[1])) &
+    (df_full['DY'].between(dy_range[0], dy_range[1]))
 )
 df_view = df_full[mask].copy()
 
 if setor != "Todos": df_view = df_view[df_view['Setor'] == setor]
 if busca: df_view = df_view[df_view['Ticker'].str.contains(busca)]
 
-# Momentum
-if usar_mom:
-    with st.spinner("Momentum (Top 50)..."):
-        top = df_view.nlargest(50, 'Liquidez')['Ticker'].tolist()
-        mom_scores = get_momentum(top)
-        df_view['Momentum'] = df_view['Ticker'].map(mom_scores).fillna(0)
-else:
-    df_view['Momentum'] = 0
+# --- DASHBOARD ---
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Ativos Filtrados", len(df_view))
+c2.metric("Yield Médio", f"{df_view[df_view['DY']>0]['DY'].mean():.2f}%")
+c3.metric("P/L Médio", f"{df_view[(df_view['PL']>0)&(df_view['PL']<50)]['PL'].mean():.1f}x")
+try:
+    best = df_view.groupby('Setor')['DY'].mean().idxmax()
+    c4.metric("Setor (Yield)", best)
+except: c4.metric("Setor", "-")
 
-# Layout Principal
-st.subheader(f"📋 Market ({len(df_view)})")
-
-t1, t2, t3, t4, t5 = st.tabs(["Geral", "🚀 Momentum", "💰 Dividendos", "💎 Valor", "✨ Magic"])
-
-cols_main = ['Ticker', 'Setor', 'Preco', 'PL', 'PVP', 'DY', 'ROE', 'MargemLiquida', 'Div_Patrimonio', 'Momentum', 'Graham_Fair', 'Upside', 'Score_Magic']
-
-cfg = {
-    "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
-    "DY": st.column_config.ProgressColumn("Yield", format="%.1f%%", min_value=0, max_value=15),
-    "Momentum": st.column_config.NumberColumn("Mom.", format="%.1f%%"),
-    "Upside": st.column_config.NumberColumn("Upside", format="%.0f%%")
-}
-
-sel_ticker = None
-
-def show_table(d, k):
-    # Garante colunas existentes
-    cols_exist = [c for c in cols_main if c in d.columns]
-    ev = st.dataframe(d[cols_exist], column_config=cfg, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", height=400, key=k)
-    if len(ev.selection.rows) > 0: return d.iloc[ev.selection.rows[0]]['Ticker']
-    return None
-
-with t1: sel_ticker = show_table(df_view.sort_values('Liquidez', ascending=False), 't1')
-with t2: sel_ticker = show_table(df_view.sort_values('Momentum', ascending=False), 't2')
-with t3: sel_ticker = show_table(df_view.sort_values('DY', ascending=False), 't3')
-with t4: sel_ticker = show_table(df_view.sort_values('Upside', ascending=False), 't4')
-with t5: sel_ticker = show_table(df_view.nsmallest(len(df_view), 'Score_Magic'), 't5')
-
-# --- ANÁLISE PROFUNDA ---
 st.divider()
 
-if sel_ticker:
-    row = df_full[df_full['Ticker'] == sel_ticker].iloc[0]
-    st.markdown(f"## 🔬 {sel_ticker}")
+# --- LAYOUT PRINCIPAL ---
+col_L, col_R = st.columns([1.5, 2.5])
+
+# CONFIGURAÇÃO DA TABELA
+cfg = {
+    "Preco": st.column_config.NumberColumn("R$", format="%.2f"),
+    "DY": st.column_config.ProgressColumn("Yield", format="%.1f%%", min_value=0, max_value=20),
+    "Upside": st.column_config.NumberColumn("Upside", format="%.0f%%"),
+    "Graham_Fair": st.column_config.NumberColumn("Justo", format="R$ %.2f")
+}
+
+# Variável de Seleção
+sel_ticker = None
+
+with col_L:
+    st.subheader("📋 Market Screener")
+    t1, t2, t3 = st.tabs(["Geral", "💰 Dividendos", "💎 Valor"])
     
-    # 1. KPIs
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Preço", f"R$ {row['Preco']:.2f}")
-    k2.metric("P/L", f"{row['PL']:.1f}x")
-    k3.metric("P/VP", f"{row['PVP']:.2f}x")
-    k4.metric("ROE", f"{row['ROE']:.1f}%")
-    k5.metric("Dívida/PL", f"{row.get('Div_Patrimonio',0):.2f}")
-    
-    # 2. Painel
-    tab_g, tab_c, tab_v = st.tabs(["📈 Gráfico", "📑 Contabilidade", "⚖️ Comparativo"])
-    
-    with tab_g:
-        if usar_mom:
-            with st.spinner("Baixando Gráfico..."):
-                try:
-                    h = yf.download(sel_ticker+".SA", period="3y", progress=False)
-                    if not h.empty:
-                        if isinstance(h.columns, pd.MultiIndex): h.columns = h.columns.droplevel(1)
-                        fig = go.Figure(data=[go.Candlestick(x=h.index, open=h['Open'], high=h['High'], low=h['Low'], close=h['Close'])])
-                        fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
+    # Função segura de renderização
+    def render_tab(d, k):
+        # Garante que as colunas existem
+        cols_safe = [c for c in ['Ticker', 'Preco', 'DY', 'PL', 'PVP', 'Graham_Fair', 'Upside'] if c in d.columns]
+        ev = st.dataframe(
+            d[cols_safe], 
+            column_config=cfg, 
+            use_container_width=True, 
+            hide_index=True, 
+            on_select="rerun", 
+            selection_mode="single-row",
+            height=500,
+            key=k
+        )
+        if len(ev.selection.rows) > 0:
+            return d.iloc[ev.selection.rows[0]]['Ticker']
+        return None
+
+    with t1: sel_ticker = render_tab(df_view.sort_values('Liquidez', ascending=False), 't1')
+    with t2: sel_ticker = render_tab(df_view.nlargest(100, 'DY'), 't2')
+    with t3: sel_ticker = render_tab(df_view.sort_values('Upside', ascending=False), 't3')
+
+# --- PAINEL DE DETALHES ---
+with col_R:
+    if sel_ticker:
+        # Busca linha segura
+        row = df_full[df_full['Ticker'] == sel_ticker].iloc[0]
+        
+        st.markdown(f"## 🔬 Análise: <span style='color:#00e676'>{sel_ticker}</span>", unsafe_allow_html=True)
+        
+        # KPIs Rápidos
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Preço", f"R$ {row['Preco']:.2f}")
+        m2.metric("P/L", f"{row['PL']:.1f}x")
+        m3.metric("ROE", f"{row['ROE']:.1f}%")
+        m4.metric("Dívida/PL", f"{row.get('Div_Patrimonio', 0):.2f}")
+        
+        if usar_graficos:
+            # Gráficos e Dados Profundos
+            tg, tc, tv = st.tabs(["📈 Gráfico Pro", "📑 Balanço (DRE)", "⚖️ Valuation"])
+            
+            with tg:
+                with st.spinner("Carregando Gráfico..."):
+                    hist, _ = get_details(sel_ticker)
+                    if hist is not None and not hist.empty:
+                        # Ajuste MultiIndex (problema comum do Yahoo recente)
+                        if isinstance(hist.columns, pd.MultiIndex):
+                            hist.columns = hist.columns.droplevel(1)
+                            
+                        fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
+                        fig.update_layout(title="Histórico 5 Anos", template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
                         st.plotly_chart(fig, use_container_width=True)
-                    else: st.warning("Sem dados históricos.")
-                except: st.error("Erro gráfico.")
-        else: st.info("Ative Yahoo.")
-
-    with tab_c:
-        if usar_mom:
-            with st.spinner("Baixando DRE..."):
-                av, ah = get_accounting_data(sel_ticker)
-                c_av, c_ah = st.columns(2)
-                if av is not None:
-                    c_av.markdown("**Margens (Análise Vertical)**")
-                    c_av.dataframe(av.style.format("{:,.2f}"), use_container_width=True)
-                else: c_av.warning("Contabilidade indisponível.")
+                    else:
+                        st.warning("Gráfico indisponível no momento.")
+            
+            with tc:
+                with st.spinner("Baixando DRE..."):
+                    _, dre = get_details(sel_ticker)
+                    if dre is not None:
+                        c_av1, c_av2 = st.columns(2)
+                        with c_av1:
+                            st.markdown("#### Margens")
+                            st.dataframe(dre[['Total Revenue', 'Margem Liquida %']].style.format("{:,.2f}"), use_container_width=True)
+                        with c_av2:
+                            st.markdown("#### Evolução Visual")
+                            fig_dre = px.bar(dre, x=dre.index.year, y=['Total Revenue', 'Net Income'], barmode='group', template="plotly_dark", title="Receita vs Lucro")
+                            st.plotly_chart(fig_dre, use_container_width=True)
+                    else:
+                        st.warning("Dados contábeis indisponíveis para este ativo.")
+            
+            with tv:
+                c_v1, c_v2 = st.columns(2)
+                vals = pd.DataFrame({'Modelo': ['Atual', 'Graham', 'Bazin'], 'Valor': [row['Preco'], row['Graham_Fair'], row['Bazin_Fair']]})
+                fig_v = px.bar(vals, x='Modelo', y='Valor', color='Modelo', title="Valuation", template="plotly_dark")
+                c_v1.plotly_chart(fig_v, use_container_width=True)
                 
-                if ah is not None:
-                    c_ah.markdown("**Crescimento (Análise Horizontal)**")
-                    c_ah.dataframe(ah.style.format("{:,.2f}%"), use_container_width=True)
-        else: st.info("Ative Yahoo.")
-
-    with tab_v:
-        c1, c2 = st.columns(2)
-        with c1:
-            vals = pd.DataFrame({'Modelo': ['Atual', 'Graham', 'Bazin'], 'Valor': [row['Preco'], row['Graham_Fair'], row['Bazin_Fair']]})
-            fig_v = px.bar(vals, x='Modelo', y='Valor', color='Modelo', title="Valuation", template="plotly_dark")
-            st.plotly_chart(fig_v, use_container_width=True)
-        with c2:
-            st.markdown("#### Setor")
-            df_s = df_view[df_view['Setor'] == row['Setor']]
-            fig_s = px.scatter(df_s, x='PL', y='ROE', size='Liquidez', color='DY', hover_name='Ticker', title=f"Setor: {row['Setor']}", template="plotly_dark")
-            fig_s.add_annotation(x=row['PL'], y=row['ROE'], text="ESTE", showarrow=True, arrowhead=1)
-            st.plotly_chart(fig_s, use_container_width=True)
-
-else:
-    st.info("👆 Selecione um ativo.")
+                # Scatter do Setor
+                df_setor = df_view[df_view['Setor'] == row['Setor']]
+                fig_s = px.scatter(df_setor, x='PL', y='ROE', size='Liquidez', color='DY', hover_name='Ticker', title=f"Setor: {row['Setor']}", template="plotly_dark")
+                fig_s.add_annotation(x=row['PL'], y=row['ROE'], text="AQUI", showarrow=True, arrowhead=1)
+                c_v2.plotly_chart(fig_s, use_container_width=True)
+                
+        else:
+            st.info("Ative a opção 'Carregar Gráficos' na barra lateral para ver detalhes.")
+            
+    else:
+        st.info("👈 Selecione um ativo na tabela para abrir o Painel de Controle.")
