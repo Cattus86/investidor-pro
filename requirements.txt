@@ -1,5 +1,8 @@
 streamlit
 pandas
-yfinance
-plotly
 fundamentus
+numpy
+plotly
+lxml
+openpyxl
+jinja2
